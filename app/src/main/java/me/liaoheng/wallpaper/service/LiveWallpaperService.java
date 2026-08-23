@@ -12,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PointF;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -316,11 +317,11 @@ public class LiveWallpaperService extends WallpaperService {
         }
 
         private boolean isPortrait(Context context) {
-            return width > 0 && height > 0 ? height > width : BingWallpaperUtils.isPortrait(context);
+            return isPortrait(context, width, height);
         }
 
-        private String key(SurfaceHolder holder) {
-            return key(holder.getSurfaceFrame().width(), holder.getSurfaceFrame().height());
+        static boolean isPortrait(Context context, int width, int height) {
+            return width > 0 && height > 0 ? height > width : BingWallpaperUtils.isPortrait(context);
         }
 
         private String key() {
@@ -420,9 +421,10 @@ public class LiveWallpaperService extends WallpaperService {
             if (mActionHandler == null) {
                 return;
             }
-            DownloadBitmap image = mImageCache.get(mLastFile.key(getSurfaceHolder()));
-            boolean portrait = getSurfaceHolder().getSurfaceFrame().height()
-                    > getSurfaceHolder().getSurfaceFrame().width();
+            Rect frame = getSurfaceHolder().getSurfaceFrame();
+            DownloadBitmap image = mImageCache.get(mLastFile.key(frame.width(), frame.height()));
+            boolean portrait = DownloadBitmap.isPortrait(LiveWallpaperService.this,
+                    frame.width(), frame.height());
             String imageUrl = getResolutionImageUrl(mLastFile.image, portrait);
             if (image == null || !imageUrl.equals(image.image.getImageUrl())) {
                 mActionHandler.removeMessages(DOWNLOAD_DRAW);
