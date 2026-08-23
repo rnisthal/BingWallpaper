@@ -51,6 +51,8 @@
     <string name="pref_set_wallpaper_auto_mode_lock">Lock screen</string>
     <string name="pref_wallpaper_setting">Wallpaper Setting</string>
     <string name="pref_choose_set_wallpaper_resolution">Default set resolution</string>
+    <string name="pref_set_wallpaper_match_screen_orientation">Match screen orientation</string>
+    <string name="pref_set_wallpaper_match_screen_orientation_summary">Use the matching portrait or landscape image when live wallpaper rotates</string>
     <string name="pref_choose_save_resolution">Default save resolution</string>
     <string name="pref_auto_save_wallpaper_title">Auto save wallpaper</string>
     <string name="pref_auto_save_wallpaper_summary">Save wallpaper to photos</string>

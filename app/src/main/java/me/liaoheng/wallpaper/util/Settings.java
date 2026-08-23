@@ -30,6 +30,11 @@ public class Settings {
         return getResolution(context, getResolutionValue(context));
     }
 
+    public static boolean isMatchScreenOrientation(Context context) {
+        return SettingTrayPreferences.get(context)
+                .getBoolean(SettingsActivity.PREF_SET_WALLPAPER_MATCH_SCREEN_ORIENTATION, false);
+    }
+
     public static String getResolution(Context context, int resolution) {
         String[] names = context.getResources()
                 .getStringArray(R.array.pref_set_wallpaper_resolution_name);

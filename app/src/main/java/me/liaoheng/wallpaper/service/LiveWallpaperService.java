@@ -12,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PointF;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -33,6 +34,7 @@ import com.github.liaoheng.common.util.Utils;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
@@ -54,6 +56,7 @@ import me.liaoheng.wallpaper.util.BingWallpaperUtils;
 import me.liaoheng.wallpaper.util.BitmapCache;
 import me.liaoheng.wallpaper.util.Constants;
 import me.liaoheng.wallpaper.util.DelayedHandler;
+import me.liaoheng.wallpaper.util.GlideApp;
 import me.liaoheng.wallpaper.util.HandlerHelper;
 import me.liaoheng.wallpaper.util.LogDebugFileUtils;
 import me.liaoheng.wallpaper.util.MiuiHelper;
@@ -232,15 +235,29 @@ public class LiveWallpaperService extends WallpaperService {
     private ObservableTransformer<DownloadBitmap, DownloadBitmap> download() {
         return upstream -> upstream.flatMap((Function<DownloadBitmap, ObservableSource<DownloadBitmap>>) image -> {
             try {
-                image.image.setResolutionImageUrl(this);
-                File original = WallpaperUtils.getImageFile(this, image.image.getImageUrl());
+                boolean portrait = image.isPortrait(this);
+                String imageUrl = getResolutionImageUrl(image.image, portrait);
+                image.image = image.image.copy(imageUrl);
+                File original = WallpaperUtils.getImageFile(this, imageUrl,
+                        portrait ? "wallpaper_portrait.w" : "wallpaper_landscape.w");
                 image.wallpaper = WallpaperUtils.getWallpaperImage(image.config, original,
-                        image.image.getImageUrl());
+                        imageUrl);
+                if (Settings.isMatchScreenOrientation(this)) {
+                    String alternateUrl = BingWallpaperUtils.getResolutionImageUrl(this,
+                            image.image.getBaseUrl(), !portrait);
+                    GlideApp.with(this).downloadOnly().load(alternateUrl).preload();
+                }
             } catch (Exception e) {
                 return Observable.error(e);
             }
             return Observable.just(image);
         });
+    }
+
+    private String getResolutionImageUrl(Wallpaper image, boolean portrait) {
+        return Settings.isMatchScreenOrientation(this)
+                ? BingWallpaperUtils.getResolutionImageUrl(this, image.getBaseUrl(), portrait)
+                : BingWallpaperUtils.getResolutionImageUrl(this, image.getBaseUrl());
     }
 
     private void setWallpaper(Config config, DownloadBitmap d) {
@@ -300,8 +317,12 @@ public class LiveWallpaperService extends WallpaperService {
             height = holder.getSurfaceFrame().height();
         }
 
-        private String key(SurfaceHolder holder) {
-            return key(holder.getSurfaceFrame().width(), holder.getSurfaceFrame().height());
+        private boolean isPortrait(Context context) {
+            return isPortrait(context, width, height);
+        }
+
+        static boolean isPortrait(Context context, int width, int height) {
+            return width > 0 && height > 0 ? height > width : BingWallpaperUtils.isPortrait(context);
         }
 
         private String key() {
@@ -317,7 +338,8 @@ public class LiveWallpaperService extends WallpaperService {
             if (b == null) {
                 return false;
             }
-            return key(width, height).equals(key(b.width, b.height));
+            return key(width, height).equals(b.key(b.width, b.height))
+                    && Objects.equals(image.getImageUrl(), b.image.getImageUrl());
         }
     }
 
@@ -400,8 +422,12 @@ public class LiveWallpaperService extends WallpaperService {
             if (mActionHandler == null) {
                 return;
             }
-            DownloadBitmap image = mImageCache.get(mLastFile.key(getSurfaceHolder()));
-            if (image == null) {
+            Rect frame = getSurfaceHolder().getSurfaceFrame();
+            DownloadBitmap image = mImageCache.get(mLastFile.key(frame.width(), frame.height()));
+            boolean portrait = DownloadBitmap.isPortrait(LiveWallpaperService.this,
+                    frame.width(), frame.height());
+            String imageUrl = getResolutionImageUrl(mLastFile.image, portrait);
+            if (image == null || !imageUrl.equals(image.image.getImageUrl())) {
                 mActionHandler.removeMessages(DOWNLOAD_DRAW);
                 mActionHandler.sendDelayed(DOWNLOAD_DRAW, new DownloadBitmap(mLastFile.image, mLastFile.config),
                         DOWNLOAD_DRAW_DELAY);
@@ -587,6 +613,7 @@ public class LiveWallpaperService extends WallpaperService {
 
         private void downloadWallpaper(DownloadBitmap wallpaper) {
             Utils.dispose(mDisplayDisposable);
+            wallpaper.updateSize(getSurfaceHolder());
             mDisplayDisposable = Utils.addSubscribe(Observable.just(wallpaper)
                     .subscribeOn(Schedulers.io())
                     .retryWhen(new RetryWithDelay(3, 20))

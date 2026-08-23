@@ -123,6 +123,7 @@ public class SettingsActivity extends BaseActivity {
     public static final String PREF_COUNTRY = "pref_country";
     public static final String PREF_LANGUAGE = "pref_language";
     public static final String PREF_SET_WALLPAPER_RESOLUTION = "pref_set_wallpaper_resolution";
+    public static final String PREF_SET_WALLPAPER_MATCH_SCREEN_ORIENTATION = "pref_set_wallpaper_match_screen_orientation";
     public static final String PREF_SAVE_WALLPAPER_RESOLUTION = "pref_save_wallpaper_resolution";
     public static final String PREF_SET_WALLPAPER_AUTO_MODE = "pref_set_wallpaper_auto_mode";
     public static final String PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI = "pref_set_wallpaper_day_auto_update_only_wifi";

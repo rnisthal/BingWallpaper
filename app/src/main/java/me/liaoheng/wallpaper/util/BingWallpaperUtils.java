@@ -74,7 +74,16 @@ import me.liaoheng.wallpaper.service.LiveWallpaperService;
 public class BingWallpaperUtils {
 
     public static String getResolutionImageUrl(Context context, String baseUrl) {
-        return getImageUrl(context, Settings.getResolution(context), baseUrl);
+        if (Settings.isMatchScreenOrientation(context)) {
+            return getResolutionImageUrl(context, baseUrl, isPortrait(context));
+        }
+        String resolution = Settings.getResolution(context);
+        return getImageUrl(context, resolution, baseUrl);
+    }
+
+    public static String getResolutionImageUrl(Context context, String baseUrl, boolean portraitMode) {
+        int resolutionValue = getResolutionValue(Settings.getResolutionValue(context), portraitMode);
+        return getImageUrl(context, Settings.getResolution(context, resolutionValue), baseUrl);
     }
 
     public static String getImageUrl(Context context, String resolution, String baseUrl) {
@@ -93,11 +102,21 @@ public class BingWallpaperUtils {
             }
         }
         if (resolutionValue < 10) {
+            resolutionValue = getResolutionValue(resolutionValue, isPortrait(context));
+        }
+        return Settings.getResolution(context, resolutionValue);
+    }
+
+    static int getResolutionValue(int resolutionValue, boolean portraitMode) {
+        if (portraitMode && (resolutionValue == 10 || resolutionValue == 11)) {
+            return 0;
+        }
+        if (resolutionValue < 10) {
             boolean portrait = false;
             if (resolutionValue % 2 == 0) {
                 portrait = true;
             }
-            if (isPortrait(context)) {
+            if (portraitMode) {
                 if (!portrait) {
                     resolutionValue--;
                 }
@@ -107,7 +126,7 @@ public class BingWallpaperUtils {
                 }
             }
         }
-        return Settings.getResolution(context, resolutionValue);
+        return resolutionValue;
     }
 
     public static void initResolution(Context context) {

@@ -26,4 +26,16 @@ public class BingWallpaperUtilsTest extends BaseTest {
         DateTime dateTime1 = BingWallpaperUtils.checkTime(dateTime.toLocalTime());
         assertEquals(dateTime1.getDayOfMonth(), dateTime.plusDays(1).getDayOfMonth());
     }
+
+    @Test
+    public void resolutionMatchesScreenOrientationTest() {
+        for (int portrait = 0; portrait < 10; portrait += 2) {
+            assertEquals(portrait, BingWallpaperUtils.getResolutionValue(portrait + 1, true));
+            assertEquals(portrait + 1, BingWallpaperUtils.getResolutionValue(portrait, false));
+        }
+        assertEquals(0, BingWallpaperUtils.getResolutionValue(10, true));
+        assertEquals(0, BingWallpaperUtils.getResolutionValue(11, true));
+        assertEquals(10, BingWallpaperUtils.getResolutionValue(10, false));
+        assertEquals(11, BingWallpaperUtils.getResolutionValue(11, false));
+    }
 }
