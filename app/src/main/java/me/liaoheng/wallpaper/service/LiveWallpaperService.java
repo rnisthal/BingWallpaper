@@ -238,7 +238,8 @@ public class LiveWallpaperService extends WallpaperService {
                 boolean portrait = image.isPortrait(this);
                 String imageUrl = getResolutionImageUrl(image.image, portrait);
                 image.image = image.image.copy(imageUrl);
-                File original = WallpaperUtils.getImageFile(this, imageUrl);
+                File original = WallpaperUtils.getImageFile(this, imageUrl,
+                        portrait ? "wallpaper_portrait.w" : "wallpaper_landscape.w");
                 image.wallpaper = WallpaperUtils.getWallpaperImage(image.config, original,
                         imageUrl);
                 if (Settings.isMatchScreenOrientation(this)) {

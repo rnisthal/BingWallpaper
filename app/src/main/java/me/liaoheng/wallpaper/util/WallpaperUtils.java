@@ -157,9 +157,13 @@ public class WallpaperUtils {
     }
 
     public static File getLocalWallpaperFile(Context context, File file) {
+        return getLocalWallpaperFile(context, file, "wallpaper.w");
+    }
+
+    private static File getLocalWallpaperFile(Context context, File file, String name) {
         try {
             File wallpaper = FileUtils.createFile(FileUtils.getProjectSpaceCacheDirectory(context, "wallpaper"),
-                    "wallpaper.w");
+                    name);
             Files.copy(file, wallpaper);
             return wallpaper;
         } catch (Exception e) {
@@ -171,7 +175,11 @@ public class WallpaperUtils {
      * download original wallpaper file
      */
     public static File getImageFile(Context context, String url) throws Exception {
-        return getLocalWallpaperFile(context, GlideApp.with(context).downloadOnly().load(url).submit().get());
+        return getImageFile(context, url, "wallpaper.w");
+    }
+
+    public static File getImageFile(Context context, String url, String name) throws Exception {
+        return getLocalWallpaperFile(context, GlideApp.with(context).downloadOnly().load(url).submit().get(), name);
     }
 
     public static File getWallpaperFile(Context context, @NonNull Config config, @NonNull String url) throws Exception {
