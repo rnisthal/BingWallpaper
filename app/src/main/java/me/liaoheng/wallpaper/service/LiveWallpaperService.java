@@ -336,7 +336,7 @@ public class LiveWallpaperService extends WallpaperService {
             if (b == null) {
                 return false;
             }
-            return key(width, height).equals(key(b.width, b.height))
+            return key(width, height).equals(b.key(b.width, b.height))
                     && Objects.equals(image.getImageUrl(), b.image.getImageUrl());
         }
     }
