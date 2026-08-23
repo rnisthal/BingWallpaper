@@ -3,6 +3,7 @@ package me.liaoheng.wallpaper.util;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Point;
 import android.media.ThumbnailUtils;
 import android.os.Build;
 import android.util.DisplayMetrics;
@@ -115,22 +116,20 @@ public class UIHelper implements IUIHelper {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(wallpaper.getAbsolutePath(), options);
-        boolean isCrop = false;
         if (portrait && (width > height)) {//ensure portrait
             int tmp = width;
             width = height;
             height = tmp;
         }
-        if (options.outHeight > height) {
-            isCrop = true;
-        }
-        if (isCrop) {
-            String key = BingWallpaperUtils.createKey(url + "_thumbnail");
+        Point cropSize = getCropSize(options.outWidth, options.outHeight, width, height);
+        if (cropSize.x != options.outWidth || cropSize.y != options.outHeight) {
+            String key = BingWallpaperUtils.createKey(
+                    url + "_" + wallpaper.getName() + "_thumbnail_" + cropSize.x + "x" + cropSize.y);
             File wallpaperFile = CacheUtils.get().get(key);
             if (wallpaperFile == null) {
                 Bitmap newBitmap = ThumbnailUtils.extractThumbnail(
                         BitmapFactory.decodeFile(wallpaper.getAbsolutePath()),
-                        width, height, ThumbnailUtils.OPTIONS_RECYCLE_INPUT);
+                        cropSize.x, cropSize.y, ThumbnailUtils.OPTIONS_RECYCLE_INPUT);
                 if (newBitmap != null) {
                     wallpaper = CacheUtils.get().put(key, BitmapUtils.bitmapToStream(newBitmap,
                             Bitmap.CompressFormat.JPEG));
@@ -140,5 +139,20 @@ public class UIHelper implements IUIHelper {
             }
         }
         return wallpaper;
+    }
+
+    static Point getCropSize(int sourceWidth, int sourceHeight, int targetWidth, int targetHeight) {
+        if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+            return new Point(sourceWidth, sourceHeight);
+        }
+        long sourceRatio = (long) sourceWidth * targetHeight;
+        long targetRatio = (long) targetWidth * sourceHeight;
+        if (sourceRatio > targetRatio) {
+            return new Point((int) Math.max(1, (long) sourceHeight * targetWidth / targetHeight), sourceHeight);
+        }
+        if (sourceRatio < targetRatio) {
+            return new Point(sourceWidth, (int) Math.max(1, (long) sourceWidth * targetHeight / targetWidth));
+        }
+        return new Point(sourceWidth, sourceHeight);
     }
 }
