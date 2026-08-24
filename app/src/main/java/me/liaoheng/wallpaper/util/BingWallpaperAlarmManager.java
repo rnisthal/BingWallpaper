@@ -29,26 +29,32 @@ public class BingWallpaperAlarmManager {
         return PendingIntent.getBroadcast(context, REQUEST_CODE, intent, BingWallpaperUtils.getPendingIntentFlag());
     }
 
-    public static void disabled(Context context) {
-        PendingIntent pendingIntent = getPendingIntent(context);
-        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        Throwable persistenceFailure = null;
+    public static boolean disabled(Context context) {
+        boolean disabled = true;
         try {
             Settings.setTimerAlarmTriggerAt(0).blockingAwait();
         } catch (Throwable throwable) {
-            persistenceFailure = throwable;
+            L.alog().w("BingWallpaperAlarmManager", throwable, "clear alarm state error");
+            disabled = false;
         }
-        if (alarmManager != null) {
-            alarmManager.cancel(pendingIntent);
+        try {
+            PendingIntent pendingIntent = getPendingIntent(context);
+            AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager != null) {
+                alarmManager.cancel(pendingIntent);
+            }
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "cancel alarm error");
+            disabled = false;
         }
-        if (persistenceFailure != null) {
-            throw new IllegalStateException("clear timer alarm state failure", persistenceFailure);
-        }
+        return disabled;
     }
 
     public static boolean enabled(Context context, @NonNull LocalTime localTime) {
         try {
-            disabled(context);
+            if (!disabled(context)) {
+                return false;
+            }
             return add(context, localTime);
         } catch (Throwable throwable) {
             L.alog().w("BingWallpaperAlarmManager", throwable, "enable alarm error");

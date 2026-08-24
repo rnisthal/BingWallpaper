@@ -55,7 +55,7 @@ public class BingWallpaperJobManager {
                     stateFailure = throwable;
                 }
                 boolean workDisabled = WorkerManager.disabledAndAwait(context);
-                BingWallpaperAlarmManager.disabled(context);
+                boolean alarmDisabled = BingWallpaperAlarmManager.disabled(context);
                 try {
                     Settings.clearSchedulerFingerprint().blockingAwait();
                 } catch (Throwable throwable) {
@@ -68,6 +68,9 @@ public class BingWallpaperJobManager {
                 }
                 if (!workDisabled) {
                     throw new IllegalStateException("disable automatic work failed");
+                }
+                if (!alarmDisabled) {
+                    throw new IllegalStateException("disable timer alarm failed");
                 }
             });
             return true;
@@ -296,7 +299,8 @@ public class BingWallpaperJobManager {
             Settings.runIfAutomaticUpdateCurrent(
                     () -> Settings.isAutomaticUpdateEnabled(context), () -> pending.set(true));
             return pending.get() ? PENDING_LIVE : Settings.NONE;
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "enable Live transition failure");
         }
         return Settings.NONE;
     }

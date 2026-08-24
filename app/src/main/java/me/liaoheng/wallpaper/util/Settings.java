@@ -283,7 +283,11 @@ public class Settings {
     }
 
     public static long getTimerAlarmTriggerAt() {
-        return Long.parseLong(SettingTrayPreferences.get().getString(TIMER_ALARM_TRIGGER_AT, "0"));
+        try {
+            return Long.parseLong(SettingTrayPreferences.get().getString(TIMER_ALARM_TRIGGER_AT, "0"));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     public static Completable setSchedulerFingerprint(Context context, @JobType int jobType) {
