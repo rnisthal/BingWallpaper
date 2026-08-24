@@ -13,6 +13,7 @@ import com.github.liaoheng.common.util.L;
 import com.github.liaoheng.common.util.YNCallback;
 
 import org.joda.time.LocalTime;
+import org.joda.time.LocalDate;
 
 import java.util.concurrent.TimeUnit;
 
@@ -96,6 +97,7 @@ public class BingWallpaperJobManager {
         long time = TimeUnit.HOURS.toSeconds(Settings.getAutomaticUpdateInterval(context));
         boolean enabled = WorkerManager.enabled(context, time);
         if (enabled) {
+            WorkerManager.cancelTimer(context);
             BingWallpaperAlarmManager.disabled(context);
             setLivePolling(context, false);
             Settings.setJobType(context, Settings.WORKER);
@@ -116,6 +118,10 @@ public class BingWallpaperJobManager {
             WorkerManager.disabled(context);
             setLivePolling(context, false);
             Settings.setJobType(context, Settings.TIMER);
+            if (BingWallpaperUtils.isAtOrAfterEarliestTime(LocalTime.now(), updateTime)
+                    && BingWallpaperUtils.isTaskUndone(context)) {
+                WorkerManager.enqueueTimer(context, LocalDate.now(), true);
+            }
             new Thread(() -> {
                 if (Settings.isEnableLog(context)) {
                     LogDebugFileUtils.get().i(TAG, "Enable timer time : %s", updateTime.toString("HH:mm"));

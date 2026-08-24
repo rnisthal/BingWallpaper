@@ -104,7 +104,7 @@ public class TasksUtils {
      */
     public static boolean isToDaysDo(DateTime next, DateTime now, int day) {
         int days = Days.daysBetween(next.toLocalDate(), now.toLocalDate()).getDays();
-        return days >= day;
+        return days < 0 || days >= day;
     }
 
     public static void markDone(String tag) {

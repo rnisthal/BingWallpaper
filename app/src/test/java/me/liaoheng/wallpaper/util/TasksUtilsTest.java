@@ -28,4 +28,10 @@ public class TasksUtilsTest extends BaseTest {
         //log("toDaysDo : %s", toDaysDo);
         assertTrue(toDaysDo);
     }
+
+    @Test
+    public void futureCompletionDoesNotBlockAfterClockRollback() {
+        DateTime now = DateTime.now();
+        assertTrue(TasksUtils.isToDaysDo(now.plusDays(1), now, 1));
+    }
 }

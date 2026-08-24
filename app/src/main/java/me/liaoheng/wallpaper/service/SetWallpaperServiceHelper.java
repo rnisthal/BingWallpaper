@@ -60,24 +60,35 @@ public class SetWallpaperServiceHelper {
         NotificationUtils.showFailureNotification(mContext);
     }
 
-    public void success(Config config, Wallpaper image) {
+    public void success(Config config, Wallpaper image, boolean completeDay) {
         L.alog().i(TAG, "set wallpaper success");
         new Thread(() -> {
             if (Settings.isEnableLogProvider(mContext)) {
                 LogDebugFileUtils.get().i(TAG, "Set wallpaper success");
             }
-            if (config.isBackground()) {
-                if (!Settings.getLastWallpaperImageUrl(mContext).equals(image.getImageUrl())) {
-                    BingWallpaperUtils.taskComplete(mContext, TAG);
-                    showSuccessNotification(image, Settings.isAutomaticUpdateNotification(mContext));
-                    Settings.setLastWallpaperImageUrl(mContext, image.getImageUrl());
-                }
-            } else {
-                showSuccessNotification(image, config.isShowNotification());
-            }
         }).start();
+        if (config.isBackground()) {
+            Settings.setLastWallpaperImageUrlAsync(image.getImageUrl())
+                    .andThen(Settings.setLastWallpaperBaseUrlAsync(image.getBaseUrl()))
+                    .blockingAwait();
+            if (completeDay) {
+                BingWallpaperUtils.taskComplete(mContext, TAG);
+            }
+            showSuccessNotification(image, Settings.isAutomaticUpdateNotification(mContext));
+        } else {
+            showSuccessNotification(image, config.isShowNotification());
+        }
         AppWidget_5x2.start(mContext, image);
         AppWidget_5x1.start(mContext, image);
+        sendSetWallpaperBroadcast(BingWallpaperState.SUCCESS);
+    }
+
+    public void success(Config config, Wallpaper image) {
+        success(config, image, false);
+    }
+
+    public void unchanged() {
+        NotificationUtils.clearStartNotification(mContext);
         sendSetWallpaperBroadcast(BingWallpaperState.SUCCESS);
     }
 

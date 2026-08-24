@@ -18,6 +18,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Process;
 import android.service.wallpaper.WallpaperService;
+import android.text.TextUtils;
 import android.view.SurfaceHolder;
 
 import androidx.annotation.Nullable;
@@ -39,6 +40,7 @@ import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.ObservableSource;
@@ -53,6 +55,7 @@ import me.liaoheng.wallpaper.model.Config;
 import me.liaoheng.wallpaper.model.Wallpaper;
 import me.liaoheng.wallpaper.model.WallpaperImage;
 import me.liaoheng.wallpaper.util.BingWallpaperUtils;
+import me.liaoheng.wallpaper.util.BingWallpaperJobManager;
 import me.liaoheng.wallpaper.util.BitmapCache;
 import me.liaoheng.wallpaper.util.Constants;
 import me.liaoheng.wallpaper.util.DelayedHandler;
@@ -149,6 +152,7 @@ public class LiveWallpaperService extends WallpaperService {
     }
 
     private ScheduledFuture<?> mScheduledFuture;
+    private final AtomicBoolean mAutomaticUpdateRunning = new AtomicBoolean();
 
     public void enable() {
         if (mPoolExecutor == null || !Settings.isAutomaticUpdateEnabled(this)
@@ -174,14 +178,50 @@ public class LiveWallpaperService extends WallpaperService {
         if (Settings.isEnableLogProvider(this)) {
             LogDebugFileUtils.get().i(TAG, "Timing check...");
         }
-        if (!BingWallpaperUtils.isTaskUndone(this)) {
+        if (!mAutomaticUpdateRunning.compareAndSet(false, true)) {
             return;
         }
         Config config = BingWallpaperUtils.checkRunningToConfig(this, TAG);
         if (config == null) {
+            mAutomaticUpdateRunning.set(false);
             return;
         }
-        updateBingWallpaper(Observable.just(false).compose(load(config)), config);
+        try {
+            mServiceHelper.begin(config, true);
+            Wallpaper image = BingWallpaperNetworkClient.getWallpaper(this, false);
+            String storedBase = Settings.getLastWallpaperBaseUrl(this);
+            if (TextUtils.isEmpty(storedBase)
+                    && BingWallpaperUtils.legacyUrlMatchesBase(
+                    Settings.getLastWallpaperImageUrl(this), image.getBaseUrl())) {
+                Settings.setLastWallpaperBaseUrlAsync(image.getBaseUrl()).blockingAwait();
+                mServiceHelper.unchanged();
+                return;
+            }
+            if (!TextUtils.isEmpty(storedBase) && storedBase.equals(image.getBaseUrl())) {
+                mServiceHelper.unchanged();
+                return;
+            }
+
+            image.setResolutionImageUrl(this);
+            File original = WallpaperUtils.getImageFile(this, image.getImageUrl());
+            if (original == null || !original.exists()) {
+                throw new IOException("Download wallpaper failure");
+            }
+            if (!BingWallpaperUtils.isAutomaticUpdateEligible(this)
+                    || Settings.getJobType(this) != Settings.LIVE_WALLPAPER
+                    || !BingWallpaperJobManager.isLiveWallpaperActive(this)) {
+                mServiceHelper.unchanged();
+                return;
+            }
+
+            DownloadBitmap download = new DownloadBitmap(image, config);
+            setWallpaper(config, download);
+            mServiceHelper.success(config, image, !TextUtils.isEmpty(storedBase));
+        } catch (Throwable throwable) {
+            mServiceHelper.failure(config, throwable);
+        } finally {
+            mAutomaticUpdateRunning.set(false);
+        }
     }
 
     public void setBingWallpaper(Wallpaper image, Config config) {

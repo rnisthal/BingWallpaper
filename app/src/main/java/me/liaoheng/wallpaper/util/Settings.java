@@ -197,10 +197,18 @@ public class Settings {
         SettingTrayPreferences.get(context).put(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, url);
     }
 
+    public static Completable setLastWallpaperImageUrlAsync(String url) {
+        return SettingTrayPreferences.get().putStringAsync(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, url);
+    }
+
     private static final String LAST_WALLPAPER_BASE_URL = "last_wallpaper_base_url";
 
     public static void setLastWallpaperBaseUrl(Context context, String baseUrl) {
         SettingTrayPreferences.get(context).put(LAST_WALLPAPER_BASE_URL, baseUrl);
+    }
+
+    public static Completable setLastWallpaperBaseUrlAsync(String baseUrl) {
+        return SettingTrayPreferences.get().putStringAsync(LAST_WALLPAPER_BASE_URL, baseUrl);
     }
 
     public static String getLastWallpaperBaseUrl(Context context) {
