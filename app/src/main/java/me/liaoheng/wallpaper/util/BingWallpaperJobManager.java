@@ -2,9 +2,11 @@ package me.liaoheng.wallpaper.util;
 
 import android.app.Activity;
 import android.app.WallpaperManager;
+import android.app.WallpaperInfo;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Looper;
 import android.widget.Toast;
 
 import com.github.liaoheng.common.util.L;
@@ -23,31 +25,22 @@ import me.liaoheng.wallpaper.service.LiveWallpaperService;
  */
 public class BingWallpaperJobManager {
     private static final String TAG = BingWallpaperJobManager.class.getSimpleName();
+    public static final int PENDING_LIVE = -2;
 
     public static void disabled(Context context) {
         disabled(context, false);
     }
 
     public static void disabled(Context context, boolean force) {
-        new Thread(() -> {
-            WorkerManager.disabled(context);
-            BingWallpaperAlarmManager.disabled(context);
-            if (force || Settings.getJobType(context) == Settings.LIVE_WALLPAPER) {
-                try {
-                    WallpaperManager.getInstance(context).clear();
-                } catch (Exception ignored) {
-                }
-            }
-        }).start();
-        clear(context);
+        WorkerManager.disabled(context);
+        BingWallpaperAlarmManager.disabled(context);
+        setLivePolling(context, false);
+        Settings.setJobType(context, Settings.NONE);
     }
 
+    @Deprecated
     public static void clear(Context context) {
         Settings.setJobType(context, Settings.NONE);
-        Settings.setLastWallpaperImageUrl(context, "");
-        new Thread(() -> {
-            BingWallpaperUtils.clearTaskComplete(context);
-        }).start();
     }
 
     public static int enabled(Context context) {
@@ -61,12 +54,12 @@ public class BingWallpaperJobManager {
     @Settings.JobType
     public static int enabledJob(Context context) {
         try {
-            clear(context);
             int type = Settings.getAutomaticUpdateType(context);
             if (type == Settings.AUTOMATIC_UPDATE_TYPE_AUTO) {
                 if (BingWallpaperUtils.isROMSystem()) {
-                    if (enableLiveService(context)) {
-                        return Settings.LIVE_WALLPAPER;
+                    int live = enableLiveService(context);
+                    if (live != Settings.NONE) {
+                        return live;
                     }
                     if (enableSystem(context)) {
                         return Settings.WORKER;
@@ -75,8 +68,9 @@ public class BingWallpaperJobManager {
                     if (enableSystem(context)) {
                         return Settings.WORKER;
                     }
-                    if (enableLiveService(context)) {
-                        return Settings.LIVE_WALLPAPER;
+                    int live = enableLiveService(context);
+                    if (live != Settings.NONE) {
+                        return live;
                     }
                 }
                 if (enableTimer(context)) {
@@ -87,9 +81,7 @@ public class BingWallpaperJobManager {
                     return Settings.WORKER;
                 }
             } else if (type == Settings.AUTOMATIC_UPDATE_TYPE_SERVICE) {
-                if (enableLiveService(context)) {
-                    return Settings.LIVE_WALLPAPER;
-                }
+                return enableLiveService(context);
             } else if (type == Settings.AUTOMATIC_UPDATE_TYPE_TIMER) {
                 if (enableTimer(context)) {
                     return Settings.TIMER;
@@ -104,6 +96,8 @@ public class BingWallpaperJobManager {
         long time = TimeUnit.HOURS.toSeconds(Settings.getAutomaticUpdateInterval(context));
         boolean enabled = WorkerManager.enabled(context, time);
         if (enabled) {
+            BingWallpaperAlarmManager.disabled(context);
+            setLivePolling(context, false);
             Settings.setJobType(context, Settings.WORKER);
             new Thread(() -> {
                 if (Settings.isEnableLog(context)) {
@@ -119,6 +113,8 @@ public class BingWallpaperJobManager {
         LocalTime updateTime = BingWallpaperUtils.getDayUpdateTime(context);
         boolean enabled = BingWallpaperAlarmManager.enabled(context, updateTime);
         if (enabled) {
+            WorkerManager.disabled(context);
+            setLivePolling(context, false);
             Settings.setJobType(context, Settings.TIMER);
             new Thread(() -> {
                 if (Settings.isEnableLog(context)) {
@@ -130,13 +126,23 @@ public class BingWallpaperJobManager {
         return enabled;
     }
 
-    public static boolean enableLiveService(Context context) {
+    public static int enableLiveService(Context context) {
+        if (Settings.getAutoModeValue(context) == Constants.EXTRA_SET_WALLPAPER_MODE_LOCK) {
+            return Settings.NONE;
+        }
         try {
+            if (isLiveWallpaperActive(context)) {
+                WorkerManager.disabled(context);
+                BingWallpaperAlarmManager.disabled(context);
+                Settings.setJobType(context, Settings.LIVE_WALLPAPER);
+                setLivePolling(context, true);
+                return Settings.LIVE_WALLPAPER;
+            }
             startLiveService(context);
-            return true;
+            return PENDING_LIVE;
         } catch (Throwable ignored) {
         }
-        return false;
+        return Settings.NONE;
     }
 
     public static int LIVE_WALLPAPER_REQUEST_CODE = 0x99;
@@ -148,15 +154,19 @@ public class BingWallpaperJobManager {
         if (intent.resolveActivity(context.getPackageManager()) == null) {
             throw new android.content.ActivityNotFoundException("LiveWallpaperService");
         }
-        if (context instanceof Activity) {
-            new Thread(() -> ((Activity) context).startActivityForResult(intent, LIVE_WALLPAPER_REQUEST_CODE)).start();
+        if (!(context instanceof Activity) || Looper.myLooper() != Looper.getMainLooper()) {
+            throw new IllegalStateException("Live wallpaper chooser requires a foreground activity");
         }
+        ((Activity) context).startActivityForResult(intent, LIVE_WALLPAPER_REQUEST_CODE);
     }
 
     public static void onActivityResult(Context context, int requestCode, int resultCode, YNCallback callback) {
         if (requestCode == LIVE_WALLPAPER_REQUEST_CODE) {
             if (Activity.RESULT_OK == resultCode) {
+                WorkerManager.disabled(context);
+                BingWallpaperAlarmManager.disabled(context);
                 Settings.setJobType(context, Settings.LIVE_WALLPAPER);
+                setLivePolling(context, true);
                 new Thread(() -> {
                     if (Settings.isEnableLog(context)) {
                         LogDebugFileUtils.get().i(TAG, "Enable live wallpaper");
@@ -167,7 +177,12 @@ public class BingWallpaperJobManager {
                     callback.onAllow();
                 }
             } else {
-                if (callback != null) {
+                if (Settings.getAutomaticUpdateType(context) == Settings.AUTOMATIC_UPDATE_TYPE_AUTO
+                        && (enableSystem(context) || enableTimer(context))) {
+                    if (callback != null) {
+                        callback.onAllow();
+                    }
+                } else if (callback != null) {
                     callback.onDeny();
                 }
             }
@@ -198,6 +213,54 @@ public class BingWallpaperJobManager {
     public static boolean checkLiveWallpaperService() {
         long heartbeat = Settings.getLiveWallpaperHeartbeat();
         return heartbeat > 0 && (System.currentTimeMillis() - heartbeat <= Constants.DEF_LIVE_WALLPAPER_CHECK_PERIODIC);
+    }
+
+    public static boolean isLiveWallpaperActive(Context context) {
+        WallpaperInfo info = WallpaperManager.getInstance(context).getWallpaperInfo();
+        return info != null && new ComponentName(context, LiveWallpaperService.class).equals(info.getComponent());
+    }
+
+    public static boolean reconfigure(Context context) {
+        if (!Settings.isAutomaticUpdateEnabled(context)) {
+            return true;
+        }
+        int jobType = Settings.getJobType(context);
+        if (jobType == Settings.WORKER) {
+            return enableSystem(context);
+        }
+        if (jobType == Settings.TIMER) {
+            return enableTimer(context);
+        }
+        if (jobType == Settings.LIVE_WALLPAPER) {
+            setLivePolling(context, true);
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean restore(Context context, @Settings.JobType int jobType) {
+        if (jobType == Settings.WORKER) {
+            return enableSystem(context);
+        }
+        if (jobType == Settings.TIMER) {
+            return enableTimer(context);
+        }
+        if (jobType == Settings.LIVE_WALLPAPER && isLiveWallpaperActive(context)) {
+            WorkerManager.disabled(context);
+            BingWallpaperAlarmManager.disabled(context);
+            Settings.setJobType(context, Settings.LIVE_WALLPAPER);
+            setLivePolling(context, true);
+            return true;
+        }
+        disabled(context);
+        return jobType == Settings.NONE;
+    }
+
+    public static void setLivePolling(Context context, boolean enabled) {
+        Intent intent = new Intent(LiveWallpaperService.ENABLE_LIVE_WALLPAPER);
+        intent.putExtra(LiveWallpaperService.EXTRA_ENABLE_LIVE_WALLPAPER, enabled);
+        intent.setPackage(context.getPackageName());
+        context.sendBroadcast(intent, LiveWallpaperService.PERMISSION_UPDATE_LIVE_WALLPAPER);
     }
 
 }

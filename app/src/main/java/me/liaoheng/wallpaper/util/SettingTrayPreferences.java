@@ -12,6 +12,7 @@ import androidx.preference.PreferenceDataStore;
 
 import java.util.Set;
 
+import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.schedulers.Schedulers;
@@ -142,6 +143,30 @@ public class SettingTrayPreferences extends PreferenceDataStore {
     public boolean put(@NonNull String key, boolean value) {
         putBoolean(key, value);
         return true;
+    }
+
+    public Completable putStringAsync(@NonNull String key, @NonNull String value) {
+        return mAccessor.updateDataAsync(p -> {
+            MutablePreferences preferences = p.toMutablePreferences();
+            preferences.set(PreferencesKeys.stringKey(key), value);
+            return Single.just(preferences);
+        }).ignoreElement();
+    }
+
+    public Completable putIntAsync(@NonNull String key, int value) {
+        return mAccessor.updateDataAsync(p -> {
+            MutablePreferences preferences = p.toMutablePreferences();
+            preferences.set(PreferencesKeys.intKey(key), value);
+            return Single.just(preferences);
+        }).ignoreElement();
+    }
+
+    public Completable putBooleanAsync(@NonNull String key, boolean value) {
+        return mAccessor.updateDataAsync(p -> {
+            MutablePreferences preferences = p.toMutablePreferences();
+            preferences.set(PreferencesKeys.booleanKey(key), value);
+            return Single.just(preferences);
+        }).ignoreElement();
     }
 
     @Override
@@ -293,6 +318,21 @@ public class SettingTrayPreferences extends PreferenceDataStore {
         @Override
         public boolean remove(@NonNull String key) {
             return false;
+        }
+
+        @Override
+        public Completable putStringAsync(@NonNull String key, @NonNull String value) {
+            return Completable.complete();
+        }
+
+        @Override
+        public Completable putIntAsync(@NonNull String key, int value) {
+            return Completable.complete();
+        }
+
+        @Override
+        public Completable putBooleanAsync(@NonNull String key, boolean value) {
+            return Completable.complete();
         }
     }
 }

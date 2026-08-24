@@ -33,6 +33,9 @@ import com.github.liaoheng.common.util.YNCallback;
 import java.util.Locale;
 import java.util.Objects;
 
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.util.BingWallpaperJobManager;
 import me.liaoheng.wallpaper.util.BingWallpaperUtils;
@@ -143,7 +146,14 @@ public class SettingsActivity extends BaseActivity {
         private SwitchPreferenceCompat mDailyUpdatePreference;
         private ListPreference mDailyUpdateIntervalPreference;
         private TimePreference mDailyUpdateTimePreference;
+        private Preference mDailyUpdateModePreference;
+        private SwitchPreferenceCompat mOnlyWifiPreference;
         private SwitchPreferenceCompat mAutoSaveWallpaperPreference;
+        private boolean mAutomaticTransition;
+        private Preference mPendingPreference;
+        private Object mPendingOldValue;
+        private Object mPendingNewValue;
+        private int mPendingPreviousJobType = Settings.NONE;
 
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
@@ -183,7 +193,7 @@ public class SettingsActivity extends BaseActivity {
                         return;
                     }
                     boolean enable = intent.getBooleanExtra("enable", false);
-                    mDailyUpdatePreference.setChecked(enable);
+                    completePendingLiveChange(enable);
                 }
             }
         }
@@ -248,9 +258,10 @@ public class SettingsActivity extends BaseActivity {
 
             mDailyUpdatePreference = findPreference(PREF_SET_WALLPAPER_DAILY_UPDATE);
             mDailyUpdatePreference.setOnPreferenceChangeListener(this);
-            Preference mDailyUpdateModeListPreference = findPreference(PREF_SET_WALLPAPER_DAILY_UPDATE_MODE);
-            mDailyUpdateModeListPreference.setOnPreferenceChangeListener(this);
+            mDailyUpdateModePreference = findPreference(PREF_SET_WALLPAPER_DAILY_UPDATE_MODE);
+            mDailyUpdateModePreference.setOnPreferenceChangeListener(this);
             mDailyUpdateIntervalPreference = findPreference(PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL);
+            mDailyUpdateIntervalPreference.setOnPreferenceChangeListener(this);
             mDailyUpdateIntervalPreference.setSummaryProvider(new Preference.SummaryProvider<ListPreference>() {
                 @Nullable
                 @Override
@@ -260,6 +271,9 @@ public class SettingsActivity extends BaseActivity {
                 }
             });
             mDailyUpdateTimePreference = findPreference(PREF_SET_WALLPAPER_DAILY_UPDATE_TIME);
+            mDailyUpdateTimePreference.setOnPreferenceChangeListener(this);
+            mOnlyWifiPreference = findPreference(PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI);
+            mOnlyWifiPreference.setOnPreferenceChangeListener(this);
             Preference mCountryListPreference = findPreference(PREF_COUNTRY);
             mCountryListPreference.setOnPreferenceChangeListener(this);
             Preference mLanguageListPreference = findPreference(PREF_LANGUAGE);
@@ -332,12 +346,12 @@ public class SettingsActivity extends BaseActivity {
 
         private void initWorkerView() {
             mDailyUpdateIntervalPreference.setEnabled(true);
-            mDailyUpdateTimePreference.setEnabled(false);
+            mDailyUpdateTimePreference.setEnabled(true);
         }
 
         private void initLiveView() {
             mDailyUpdateIntervalPreference.setEnabled(false);
-            mDailyUpdateTimePreference.setEnabled(false);
+            mDailyUpdateTimePreference.setEnabled(true);
         }
 
         private void initTimerView() {
@@ -347,6 +361,9 @@ public class SettingsActivity extends BaseActivity {
 
         @Override
         public boolean onPreferenceChange(@NonNull Preference preference, Object newValue) {
+            if (isAutomaticPreference(preference.getKey())) {
+                return beginAutomaticChange(preference, newValue);
+            }
             switch (Objects.requireNonNull(preference.getKey())) {
                 case PREF_COUNTRY:
                     BingWallpaperUtils.clearNetCache().subscribe();
@@ -368,38 +385,6 @@ public class SettingsActivity extends BaseActivity {
                         if (Settings.getJobType(requireContext()) == Settings.LIVE_WALLPAPER) {
                             return false;
                         }
-                    }
-                    break;
-                case PREF_SET_WALLPAPER_DAILY_UPDATE:
-                    if (Boolean.parseBoolean(String.valueOf(newValue))) {
-                        int type = BingWallpaperJobManager.enabled(requireContext());
-                        if (type == Settings.NONE) {
-                            return false;
-                        } else {
-                            if (type == Settings.LIVE_WALLPAPER) {
-                                return false;
-                            }
-                        }
-                    } else {
-                        BingWallpaperJobManager.disabled(requireContext());
-                    }
-                    break;
-                case PREF_SET_WALLPAPER_DAILY_UPDATE_MODE:
-                    int type = Integer.parseInt(String.valueOf(newValue));
-                    switch (type) {
-                        case Settings.AUTOMATIC_UPDATE_TYPE_AUTO:
-                            mDailyUpdateTimePreference.setEnabled(true);
-                            mDailyUpdateIntervalPreference.setEnabled(true);
-                            break;
-                        case Settings.AUTOMATIC_UPDATE_TYPE_SYSTEM:
-                            initWorkerView();
-                            break;
-                        case Settings.AUTOMATIC_UPDATE_TYPE_SERVICE:
-                            initLiveView();
-                            break;
-                        case Settings.AUTOMATIC_UPDATE_TYPE_TIMER:
-                            initTimerView();
-                            break;
                     }
                     break;
                 case PREF_SET_WALLPAPER_LOG:
@@ -432,6 +417,156 @@ public class SettingsActivity extends BaseActivity {
                     break;
             }
             return true;
+        }
+
+        private boolean isAutomaticPreference(String key) {
+            return PREF_SET_WALLPAPER_DAILY_UPDATE.equals(key)
+                    || PREF_SET_WALLPAPER_DAILY_UPDATE_MODE.equals(key)
+                    || PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL.equals(key)
+                    || PREF_SET_WALLPAPER_DAILY_UPDATE_TIME.equals(key)
+                    || PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI.equals(key);
+        }
+
+        private boolean beginAutomaticChange(Preference preference, Object newValue) {
+            if (mAutomaticTransition) {
+                return false;
+            }
+            mAutomaticTransition = true;
+            mPendingPreference = preference;
+            mPendingOldValue = getPreferenceValue(preference);
+            mPendingNewValue = newValue;
+            mPendingPreviousJobType = Settings.getJobType(requireContext());
+            updateAutomaticControls();
+
+            persistAutomaticValue(preference.getKey(), newValue)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(this::applyAutomaticChange, throwable -> rollbackAutomaticChange());
+            return false;
+        }
+
+        private Completable persistAutomaticValue(String key, Object value) {
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE.equals(key)) {
+                return Settings.setAutomaticUpdateEnabled(Boolean.parseBoolean(String.valueOf(value)));
+            }
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE_MODE.equals(key)) {
+                return Settings.setAutomaticUpdateType(Integer.parseInt(String.valueOf(value)));
+            }
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL.equals(key)) {
+                return Settings.setAutomaticUpdateInterval(Integer.parseInt(String.valueOf(value)));
+            }
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE_TIME.equals(key)) {
+                return Settings.setAutomaticUpdateTime(String.valueOf(value));
+            }
+            return Settings.setOnlyWifi(Boolean.parseBoolean(String.valueOf(value)));
+        }
+
+        private void applyAutomaticChange() {
+            String key = mPendingPreference.getKey();
+            boolean success = true;
+            int result = Settings.NONE;
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE.equals(key)) {
+                if (Boolean.parseBoolean(String.valueOf(mPendingNewValue))) {
+                    result = BingWallpaperJobManager.enabled(requireActivity());
+                    success = result != Settings.NONE;
+                } else {
+                    BingWallpaperJobManager.disabled(requireContext());
+                }
+            } else if (PREF_SET_WALLPAPER_DAILY_UPDATE_MODE.equals(key)
+                    && Settings.isAutomaticUpdateEnabled(requireContext())) {
+                result = BingWallpaperJobManager.enabled(requireActivity());
+                success = result != Settings.NONE;
+            } else if (Settings.isAutomaticUpdateEnabled(requireContext())) {
+                success = BingWallpaperJobManager.reconfigure(requireContext());
+            }
+
+            if (result == BingWallpaperJobManager.PENDING_LIVE) {
+                return;
+            }
+            if (success) {
+                finishAutomaticChange(true);
+            } else {
+                rollbackAutomaticChange();
+            }
+        }
+
+        private void completePendingLiveChange(boolean success) {
+            if (!mAutomaticTransition || mPendingPreference == null) {
+                mDailyUpdatePreference.setChecked(Settings.isAutomaticUpdateEnabled(requireContext()));
+                updateAutomaticControls();
+                return;
+            }
+            if (success) {
+                finishAutomaticChange(true);
+            } else {
+                rollbackAutomaticChange();
+            }
+        }
+
+        private void rollbackAutomaticChange() {
+            Preference preference = mPendingPreference;
+            Object oldValue = mPendingOldValue;
+            int previousJobType = mPendingPreviousJobType;
+            persistAutomaticValue(preference.getKey(), oldValue)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(() -> {
+                        setPreferenceValue(preference, oldValue);
+                        if (Settings.isAutomaticUpdateEnabled(requireContext())) {
+                            BingWallpaperJobManager.restore(requireContext(), previousJobType);
+                        } else {
+                            BingWallpaperJobManager.disabled(requireContext());
+                        }
+                        UIUtils.showToast(requireContext(), R.string.enable_job_error);
+                        finishAutomaticChange(false);
+                    }, throwable -> finishAutomaticChange(false));
+        }
+
+        private void finishAutomaticChange(boolean useNewValue) {
+            if (useNewValue) {
+                setPreferenceValue(mPendingPreference, mPendingNewValue);
+            }
+            mAutomaticTransition = false;
+            mPendingPreference = null;
+            mPendingOldValue = null;
+            mPendingNewValue = null;
+            mPendingPreviousJobType = Settings.NONE;
+            mDailyUpdatePreference.setSummary(Settings.getJobTypeString(requireContext()));
+            updateAutomaticControls();
+        }
+
+        private Object getPreferenceValue(Preference preference) {
+            if (preference instanceof SwitchPreferenceCompat) {
+                return ((SwitchPreferenceCompat) preference).isChecked();
+            }
+            if (preference instanceof ListPreference) {
+                return ((ListPreference) preference).getValue();
+            }
+            return ((TimePreference) preference).getLocalTime();
+        }
+
+        private void setPreferenceValue(Preference preference, Object value) {
+            if (preference instanceof SwitchPreferenceCompat) {
+                ((SwitchPreferenceCompat) preference).setChecked(Boolean.parseBoolean(String.valueOf(value)));
+            } else if (preference instanceof ListPreference) {
+                ((ListPreference) preference).setValue(String.valueOf(value));
+            } else if (preference instanceof TimePreference) {
+                ((TimePreference) preference).setTime((org.joda.time.LocalTime) value);
+            }
+        }
+
+        private void updateAutomaticControls() {
+            boolean controlsEnabled = !mAutomaticTransition;
+            if (!WallpaperUtils.isNotSupportedWallpaper(requireContext())) {
+                mDailyUpdatePreference.setEnabled(controlsEnabled);
+            }
+            mDailyUpdateModePreference.setEnabled(controlsEnabled);
+            mDailyUpdateTimePreference.setEnabled(controlsEnabled);
+            mOnlyWifiPreference.setEnabled(controlsEnabled);
+            int mode = Settings.getAutomaticUpdateType(requireContext());
+            mDailyUpdateIntervalPreference.setEnabled(controlsEnabled
+                    && (mode == Settings.AUTOMATIC_UPDATE_TYPE_AUTO
+                    || mode == Settings.AUTOMATIC_UPDATE_TYPE_SYSTEM));
         }
 
         public void onAutoSaveWallpaperRequestPermissionsResult(boolean granted) {

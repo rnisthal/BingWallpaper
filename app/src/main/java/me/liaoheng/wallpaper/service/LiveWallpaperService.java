@@ -151,7 +151,8 @@ public class LiveWallpaperService extends WallpaperService {
     private ScheduledFuture<?> mScheduledFuture;
 
     public void enable() {
-        if (mPoolExecutor == null) {
+        if (mPoolExecutor == null || !Settings.isAutomaticUpdateEnabled(this)
+                || Settings.getJobType(this) != Settings.LIVE_WALLPAPER) {
             return;
         }
         disable();
@@ -164,6 +165,7 @@ public class LiveWallpaperService extends WallpaperService {
             return;
         }
         mScheduledFuture.cancel(true);
+        mScheduledFuture = null;
     }
 
     private void timing() {

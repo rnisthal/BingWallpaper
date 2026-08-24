@@ -8,6 +8,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Objects;
 
+import io.reactivex.rxjava3.core.Completable;
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.ui.SettingsActivity;
 
@@ -16,6 +17,36 @@ import me.liaoheng.wallpaper.ui.SettingsActivity;
  * @version 2020-07-03 16:35
  */
 public class Settings {
+
+    public static boolean isAutomaticUpdateEnabled(Context context) {
+        return SettingTrayPreferences.get(context)
+                .getBoolean(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, false);
+    }
+
+    public static Completable setAutomaticUpdateEnabled(boolean enabled) {
+        return SettingTrayPreferences.get()
+                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, enabled);
+    }
+
+    public static Completable setAutomaticUpdateType(int type) {
+        return SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE, String.valueOf(type));
+    }
+
+    public static Completable setAutomaticUpdateInterval(int hours) {
+        return SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL, String.valueOf(hours));
+    }
+
+    public static Completable setAutomaticUpdateTime(String time) {
+        return SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_TIME, time);
+    }
+
+    public static Completable setOnlyWifi(boolean onlyWifi) {
+        return SettingTrayPreferences.get()
+                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI, onlyWifi);
+    }
 
     public static boolean isCrashReport(Context context) {
         return SettingTrayPreferences.get(context).getBoolean(SettingsActivity.PREF_CRASH_REPORT, true);
@@ -166,6 +197,16 @@ public class Settings {
         SettingTrayPreferences.get(context).put(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, url);
     }
 
+    private static final String LAST_WALLPAPER_BASE_URL = "last_wallpaper_base_url";
+
+    public static void setLastWallpaperBaseUrl(Context context, String baseUrl) {
+        SettingTrayPreferences.get(context).put(LAST_WALLPAPER_BASE_URL, baseUrl);
+    }
+
+    public static String getLastWallpaperBaseUrl(Context context) {
+        return SettingTrayPreferences.get(context).getString(LAST_WALLPAPER_BASE_URL, "");
+    }
+
     public static String getLastWallpaperImageUrl(Context context) {
         return SettingTrayPreferences.get(context).getString(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, "");
     }
@@ -198,6 +239,10 @@ public class Settings {
 
     public static void setJobType(Context context, @JobType int type) {
         SettingTrayPreferences.get(context).put(BING_WALLPAPER_JOB_TYPE, type);
+    }
+
+    public static Completable setJobTypeAsync(@JobType int type) {
+        return SettingTrayPreferences.get().putIntAsync(BING_WALLPAPER_JOB_TYPE, type);
     }
 
     @JobType

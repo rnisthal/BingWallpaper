@@ -33,12 +33,12 @@
                 android:title="@string/pref_set_wallpaper_daily_update_interval" />
 
         <me.liaoheng.wallpaper.widget.TimePreference
-                android:contentDescription="@string/pref_set_wallpaper_daily_update_time"
+                android:contentDescription="@string/pref_set_wallpaper_earliest_update_time"
                 android:key="pref_set_wallpaper_day_auto_update_time"
                 app:useSimpleSummaryProvider="true"
                 android:negativeButtonText="@android:string/no"
                 android:positiveButtonText="@android:string/ok"
-                android:title="@string/pref_set_wallpaper_daily_update_time" />
+                android:title="@string/pref_set_wallpaper_earliest_update_time" />
 
         <SwitchPreferenceCompat
                 android:contentDescription="@string/pref_set_wallpaper_daily_update_success_notification"
