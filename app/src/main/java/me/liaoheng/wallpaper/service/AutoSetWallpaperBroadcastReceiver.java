@@ -7,11 +7,17 @@ import android.content.Intent;
 import com.github.liaoheng.common.util.L;
 
 import me.liaoheng.wallpaper.util.BingWallpaperJobManager;
-import me.liaoheng.wallpaper.util.BingWallpaperUtils;
+import me.liaoheng.wallpaper.util.BingWallpaperAlarmManager;
 import me.liaoheng.wallpaper.util.LogDebugFileUtils;
 import me.liaoheng.wallpaper.util.Settings;
+import me.liaoheng.wallpaper.util.WorkerManager;
 import me.liaoheng.wallpaper.widget.AppWidget_5x1;
 import me.liaoheng.wallpaper.widget.AppWidget_5x2;
+
+import org.joda.time.LocalDate;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 接收定时闹钟与开机自启事件
@@ -22,30 +28,50 @@ import me.liaoheng.wallpaper.widget.AppWidget_5x2;
 public class AutoSetWallpaperBroadcastReceiver extends BroadcastReceiver {
 
     public static final String ACTION = "me.liaoheng.wallpaper.ALARM_TASK_SCHEDULE";
+    private static final ExecutorService RECEIVER_EXECUTOR = Executors.newSingleThreadExecutor();
     private final String TAG = AutoSetWallpaperBroadcastReceiver.class.getSimpleName();
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
-            new Thread(() -> {
+        PendingResult pendingResult = goAsync();
+        Context appContext = context.getApplicationContext();
+        String action = intent.getAction();
+        RECEIVER_EXECUTOR.execute(() -> {
+            try {
+                handle(appContext, action);
+            } finally {
+                pendingResult.finish();
+            }
+        });
+    }
+
+    private void handle(Context context, String action) {
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || Intent.ACTION_TIME_CHANGED.equals(action)
+                || Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
+            if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
                 AppWidget_5x1.start(context, null);
                 AppWidget_5x2.start(context, null);
-
-                if (Settings.getJobType(context) == Settings.TIMER) {
-                    BingWallpaperJobManager.enableTimer(context);
-                }
-            }).start();
+            }
+            if (Settings.isAutomaticUpdateEnabled(context)
+                    && Settings.getJobType(context) == Settings.TIMER) {
+                BingWallpaperJobManager.enableTimer(context);
+            }
             return;
         }
-        if (ACTION.equals(intent.getAction())) {
-            new Thread(() -> {
-                L.alog().d(TAG, "timer : %s", intent.getAction());
-                if (Settings.isEnableLog(context)) {
-                    LogDebugFileUtils.get()
-                            .i(TAG, "timer : %s", intent.getAction());
-                }
-                BingWallpaperUtils.checkStartSetWallpaper(context, TAG);
-            }).start();
+        if (ACTION.equals(action)
+                && Settings.isAutomaticUpdateEnabled(context)
+                && Settings.getJobType(context) == Settings.TIMER) {
+            L.alog().d(TAG, "timer : %s", action);
+            if (Settings.isEnableLog(context)) {
+                LogDebugFileUtils.get().i(TAG, "timer : %s", action);
+            }
+            BingWallpaperAlarmManager.scheduleNext(context);
+            try {
+                WorkerManager.enqueueTimer(context, LocalDate.now(), false).getResult().get();
+            } catch (Exception exception) {
+                L.alog().w(TAG, exception, "timer enqueue failure");
+            }
         }
     }
 }

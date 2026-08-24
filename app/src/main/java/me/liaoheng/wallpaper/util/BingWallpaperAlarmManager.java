@@ -7,6 +7,8 @@ import android.content.Intent;
 
 import androidx.annotation.NonNull;
 
+import com.github.liaoheng.common.util.L;
+
 import org.joda.time.DateTime;
 import org.joda.time.LocalTime;
 
@@ -38,26 +40,30 @@ public class BingWallpaperAlarmManager {
     public static boolean enabled(Context context, @NonNull LocalTime localTime) {
         try {
             disabled(context);
-            add(context, localTime);
-            return true;
-        } catch (Throwable ignored) {
+            return add(context, localTime);
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "enable alarm error");
         }
         return false;
     }
 
-    private static void add(Context context, DateTime time) {
+    public static boolean scheduleNext(Context context) {
+        return enabled(context, BingWallpaperUtils.getDayUpdateTime(context));
+    }
+
+    private static boolean add(Context context, DateTime time) {
         PendingIntent pendingIntent = getPendingIntent(context);
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarmManager == null) {
-            return;
+            L.alog().w("BingWallpaperAlarmManager", "AlarmManager unavailable");
+            return false;
         }
-        alarmManager
-                .setRepeating(AlarmManager.RTC_WAKEUP, time.getMillis(), AlarmManager.INTERVAL_DAY,
-                        pendingIntent);
+        alarmManager.set(AlarmManager.RTC_WAKEUP, time.getMillis(), pendingIntent);
+        return true;
     }
 
-    private static void add(Context context, @NonNull LocalTime localTime) {
+    private static boolean add(Context context, @NonNull LocalTime localTime) {
         DateTime dateTime = BingWallpaperUtils.checkTime(localTime);
-        add(context, dateTime);
+        return add(context, dateTime);
     }
 }

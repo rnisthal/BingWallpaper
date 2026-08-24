@@ -35,6 +35,7 @@ import java.util.Objects;
 
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.util.BingWallpaperJobManager;
@@ -154,6 +155,12 @@ public class SettingsActivity extends BaseActivity {
         private Object mPendingOldValue;
         private Object mPendingNewValue;
         private int mPendingPreviousJobType = Settings.NONE;
+        private final CompositeDisposable mAutomaticDisposables = new CompositeDisposable();
+        private boolean mWaitingForLiveResult;
+        private static final String STATE_PENDING_KEY = "automatic_pending_key";
+        private static final String STATE_PENDING_OLD = "automatic_pending_old";
+        private static final String STATE_PENDING_NEW = "automatic_pending_new";
+        private static final String STATE_PENDING_JOB = "automatic_pending_job";
 
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
@@ -342,6 +349,7 @@ public class SettingsActivity extends BaseActivity {
             if (WallpaperUtils.isNotSupportedWallpaper(requireContext())) {
                 mDailyUpdatePreference.setEnabled(false);
             }
+            restorePendingLiveChange(savedInstanceState);
         }
 
         private void initWorkerView() {
@@ -390,7 +398,9 @@ public class SettingsActivity extends BaseActivity {
                 case PREF_SET_WALLPAPER_LOG:
                     if (Boolean.parseBoolean(String.valueOf(newValue))) {
                         LogDebugFileUtils.create(requireContext());
-                        requireContext().sendBroadcast(new Intent(Constants.ACTION_DEBUG_LOG));
+                        Intent intent = new Intent(Constants.ACTION_DEBUG_LOG);
+                        intent.setPackage(requireContext().getPackageName());
+                        requireContext().sendBroadcast(intent);
                     } else {
                         LogDebugFileUtils.destroy();
                     }
@@ -436,12 +446,13 @@ public class SettingsActivity extends BaseActivity {
             mPendingOldValue = getPreferenceValue(preference);
             mPendingNewValue = newValue;
             mPendingPreviousJobType = Settings.getJobType(requireContext());
+            mWaitingForLiveResult = false;
             updateAutomaticControls();
 
-            persistAutomaticValue(preference.getKey(), newValue)
+            mAutomaticDisposables.add(persistAutomaticValue(preference.getKey(), newValue)
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
-                    .subscribe(this::applyAutomaticChange, throwable -> rollbackAutomaticChange());
+                    .subscribe(this::applyAutomaticChange, throwable -> rollbackAutomaticChange()));
             return false;
         }
 
@@ -481,6 +492,7 @@ public class SettingsActivity extends BaseActivity {
             }
 
             if (result == BingWallpaperJobManager.PENDING_LIVE) {
+                mWaitingForLiveResult = true;
                 return;
             }
             if (success) {
@@ -496,6 +508,7 @@ public class SettingsActivity extends BaseActivity {
                 updateAutomaticControls();
                 return;
             }
+            mWaitingForLiveResult = false;
             if (success) {
                 finishAutomaticChange(true);
             } else {
@@ -507,7 +520,7 @@ public class SettingsActivity extends BaseActivity {
             Preference preference = mPendingPreference;
             Object oldValue = mPendingOldValue;
             int previousJobType = mPendingPreviousJobType;
-            persistAutomaticValue(preference.getKey(), oldValue)
+            mAutomaticDisposables.add(persistAutomaticValue(preference.getKey(), oldValue)
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(() -> {
@@ -519,7 +532,7 @@ public class SettingsActivity extends BaseActivity {
                         }
                         UIUtils.showToast(requireContext(), R.string.enable_job_error);
                         finishAutomaticChange(false);
-                    }, throwable -> finishAutomaticChange(false));
+                    }, throwable -> finishAutomaticChange(false)));
         }
 
         private void finishAutomaticChange(boolean useNewValue) {
@@ -531,6 +544,7 @@ public class SettingsActivity extends BaseActivity {
             mPendingOldValue = null;
             mPendingNewValue = null;
             mPendingPreviousJobType = Settings.NONE;
+            mWaitingForLiveResult = false;
             mDailyUpdatePreference.setSummary(Settings.getJobTypeString(requireContext()));
             updateAutomaticControls();
         }
@@ -569,6 +583,45 @@ public class SettingsActivity extends BaseActivity {
                     || mode == Settings.AUTOMATIC_UPDATE_TYPE_SYSTEM));
         }
 
+        private void restorePendingLiveChange(Bundle state) {
+            if (state == null || !state.containsKey(STATE_PENDING_KEY)) {
+                return;
+            }
+            String key = state.getString(STATE_PENDING_KEY);
+            mPendingPreference = findPreference(key);
+            if (mPendingPreference == null) {
+                return;
+            }
+            mPendingOldValue = parseAutomaticValue(key, state.getString(STATE_PENDING_OLD));
+            mPendingNewValue = parseAutomaticValue(key, state.getString(STATE_PENDING_NEW));
+            mPendingPreviousJobType = state.getInt(STATE_PENDING_JOB, Settings.NONE);
+            mAutomaticTransition = true;
+            mWaitingForLiveResult = true;
+            updateAutomaticControls();
+        }
+
+        private Object parseAutomaticValue(String key, String value) {
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE.equals(key)
+                    || PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI.equals(key)) {
+                return Boolean.parseBoolean(value);
+            }
+            if (PREF_SET_WALLPAPER_DAILY_UPDATE_TIME.equals(key)) {
+                return org.joda.time.LocalTime.parse(value);
+            }
+            return value;
+        }
+
+        @Override
+        public void onSaveInstanceState(@NonNull Bundle outState) {
+            if (mWaitingForLiveResult && mPendingPreference != null) {
+                outState.putString(STATE_PENDING_KEY, mPendingPreference.getKey());
+                outState.putString(STATE_PENDING_OLD, String.valueOf(mPendingOldValue));
+                outState.putString(STATE_PENDING_NEW, String.valueOf(mPendingNewValue));
+                outState.putInt(STATE_PENDING_JOB, mPendingPreviousJobType);
+            }
+            super.onSaveInstanceState(outState);
+        }
+
         public void onAutoSaveWallpaperRequestPermissionsResult(boolean granted) {
             mAutoSaveWallpaperPreference.setChecked(granted);
         }
@@ -577,6 +630,9 @@ public class SettingsActivity extends BaseActivity {
         public void onDestroy() {
             if (mReceiver != null) {
                 LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(mReceiver);
+            }
+            if (!mAutomaticTransition) {
+                mAutomaticDisposables.clear();
             }
             super.onDestroy();
         }

@@ -1,5 +1,6 @@
 package me.liaoheng.wallpaper.util;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
@@ -23,6 +24,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
  * @author liaoheng
  * @data 2024-11-12 10:32
  */
+@SuppressLint("UnsafeOptInUsageWarning")
 public class SettingTrayPreferences extends PreferenceDataStore {
 
     private static SettingTrayPreferences mPreferences;

@@ -11,7 +11,7 @@ import androidx.work.ExistingWorkPolicy;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
-import androidx.work.OutOfQuotaPolicy;
+import androidx.work.Operation;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkInfo;
 import androidx.work.WorkManager;
@@ -99,7 +99,7 @@ public class WorkerManager {
         WorkManager.getInstance(context).enqueue(builder.build());
     }
 
-    public static void enqueueTimer(Context context, LocalDate triggerDate, boolean replace) {
+    public static Operation enqueueTimer(Context context, LocalDate triggerDate, boolean replace) {
         Data data = new Data.Builder()
                 .putString(INPUT_AUTOMATIC_SOURCE, AutomaticUpdateSource.TIMER.value())
                 .putString(INPUT_TRIGGER_DATE, triggerDate.toString())
@@ -110,7 +110,7 @@ public class WorkerManager {
                 .setConstraints(automaticConstraints(context))
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 30, TimeUnit.MINUTES)
                 .build();
-        WorkManager.getInstance(context).enqueueUniqueWork(timerWorkName(triggerDate),
+        return WorkManager.getInstance(context).enqueueUniqueWork(timerWorkName(triggerDate),
                 replace ? ExistingWorkPolicy.REPLACE : ExistingWorkPolicy.KEEP, request);
     }
 

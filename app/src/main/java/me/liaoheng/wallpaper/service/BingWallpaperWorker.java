@@ -58,7 +58,11 @@ public class BingWallpaperWorker extends Worker {
             }
             config = BingWallpaperUtils.checkRunningToConfig(getApplicationContext(), TAG);
             if (config == null) {
-                return Result.success();
+                return source == AutomaticUpdateSource.TIMER
+                        && WorkerManager.isAutomaticSourceCurrent(
+                        getApplicationContext(), source, triggerDate)
+                        ? Result.retry()
+                        : Result.success();
             }
         }
         AutomaticUpdateResult updateResult = mSetWallpaperDelegate.setWallpaper(Wallpaper.to(map), config, true,
