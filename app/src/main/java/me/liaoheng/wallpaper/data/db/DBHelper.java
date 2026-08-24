@@ -51,7 +51,7 @@ public class DBHelper extends SQLiteOpenHelper {
     /**
      * Migrate config to DataStore
      */
-    public static void toChangeDataStore(Context context) {
+    public static synchronized void toChangeDataStore(Context context) {
         File lockFile = new File(context.getFilesDir(), "settings-migration.lock");
         try (RandomAccessFile file = new RandomAccessFile(lockFile, "rw");
                 FileChannel channel = file.getChannel();
