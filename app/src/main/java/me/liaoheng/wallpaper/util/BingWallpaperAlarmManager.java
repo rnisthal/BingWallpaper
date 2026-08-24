@@ -7,6 +7,8 @@ import android.content.Intent;
 
 import androidx.annotation.NonNull;
 
+import com.github.liaoheng.common.util.L;
+
 import org.joda.time.DateTime;
 import org.joda.time.LocalTime;
 
@@ -19,6 +21,7 @@ import me.liaoheng.wallpaper.service.AutoSetWallpaperBroadcastReceiver;
 public class BingWallpaperAlarmManager {
 
     private static final int REQUEST_CODE = 0x12;
+    private static final int RETRY_MINUTES = 30;
 
     private static PendingIntent getPendingIntent(Context context) {
         Intent intent = new Intent(context, AutoSetWallpaperBroadcastReceiver.class);
@@ -26,38 +29,83 @@ public class BingWallpaperAlarmManager {
         return PendingIntent.getBroadcast(context, REQUEST_CODE, intent, BingWallpaperUtils.getPendingIntentFlag());
     }
 
-    public static void disabled(Context context) {
-        PendingIntent pendingIntent = getPendingIntent(context);
-        AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        if (alarmManager == null) {
-            return;
+    public static boolean disabled(Context context) {
+        boolean disabled = true;
+        try {
+            Settings.setTimerAlarmTriggerAt(0).blockingAwait();
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "clear alarm state error");
+            disabled = false;
         }
-        alarmManager.cancel(pendingIntent);
+        try {
+            PendingIntent pendingIntent = getPendingIntent(context);
+            AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager != null) {
+                alarmManager.cancel(pendingIntent);
+            }
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "cancel alarm error");
+            disabled = false;
+        }
+        return disabled;
     }
 
     public static boolean enabled(Context context, @NonNull LocalTime localTime) {
         try {
-            disabled(context);
-            add(context, localTime);
-            return true;
-        } catch (Throwable ignored) {
+            if (!disabled(context)) {
+                return false;
+            }
+            return add(context, localTime);
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "enable alarm error");
         }
         return false;
     }
 
-    private static void add(Context context, DateTime time) {
+    public static boolean scheduleNext(Context context) {
+        return enabled(context, BingWallpaperUtils.getDayUpdateTime(context));
+    }
+
+    public static boolean isScheduled(Context context) {
+        Intent intent = new Intent(context, AutoSetWallpaperBroadcastReceiver.class);
+        intent.setAction(AutoSetWallpaperBroadcastReceiver.ACTION);
+        int flags = PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE;
+        return Settings.getTimerAlarmTriggerAt() > System.currentTimeMillis()
+                && PendingIntent.getBroadcast(context, REQUEST_CODE, intent, flags) != null;
+    }
+
+    public static void markDelivered() {
+        Settings.setTimerAlarmTriggerAt(0).blockingAwait();
+    }
+
+    public static boolean scheduleRetry(Context context) {
+        try {
+            return add(context, DateTime.now().plusMinutes(RETRY_MINUTES));
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "retry alarm error");
+            return false;
+        }
+    }
+
+    private static boolean add(Context context, DateTime time) {
         PendingIntent pendingIntent = getPendingIntent(context);
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarmManager == null) {
-            return;
+            L.alog().w("BingWallpaperAlarmManager", "AlarmManager unavailable");
+            return false;
         }
-        alarmManager
-                .setRepeating(AlarmManager.RTC_WAKEUP, time.getMillis(), AlarmManager.INTERVAL_DAY,
-                        pendingIntent);
+        alarmManager.set(AlarmManager.RTC_WAKEUP, time.getMillis(), pendingIntent);
+        try {
+            Settings.setTimerAlarmTriggerAt(time.getMillis()).blockingAwait();
+        } catch (Throwable throwable) {
+            alarmManager.cancel(pendingIntent);
+            throw new IllegalStateException("persist timer alarm state failure", throwable);
+        }
+        return true;
     }
 
-    private static void add(Context context, @NonNull LocalTime localTime) {
+    private static boolean add(Context context, @NonNull LocalTime localTime) {
         DateTime dateTime = BingWallpaperUtils.checkTime(localTime);
-        add(context, dateTime);
+        return add(context, dateTime);
     }
 }

@@ -14,8 +14,11 @@ import java.util.Map;
 import me.liaoheng.wallpaper.model.Config;
 import me.liaoheng.wallpaper.model.Wallpaper;
 import me.liaoheng.wallpaper.util.BingWallpaperUtils;
+import me.liaoheng.wallpaper.util.AutomaticUpdateResult;
+import me.liaoheng.wallpaper.util.AutomaticUpdateSource;
 import me.liaoheng.wallpaper.util.LogDebugFileUtils;
 import me.liaoheng.wallpaper.util.Settings;
+import me.liaoheng.wallpaper.util.WorkerManager;
 
 /**
  * @author liaoheng
@@ -40,14 +43,42 @@ public class BingWallpaperWorker extends Worker {
                     .i(TAG, "action worker id : %s", getId());
         }
         Map<String, Object> map = getInputData().getKeyValueMap();
+        String sourceValue = getInputData().getString(WorkerManager.INPUT_AUTOMATIC_SOURCE);
+        AutomaticUpdateSource source = AutomaticUpdateSource.from(sourceValue);
+        String triggerDate = getInputData().getString(WorkerManager.INPUT_TRIGGER_DATE);
+        boolean automatic = source != null;
+        if (automatic && !WorkerManager.isAutomaticSourceCurrent(
+                getApplicationContext(), source, triggerDate)) {
+            return Result.success();
+        }
         Config config = Config.to(map);
         if (config == null) {
+            if (!automatic) {
+                return Result.failure();
+            }
             config = BingWallpaperUtils.checkRunningToConfig(getApplicationContext(), TAG);
             if (config == null) {
-                return Result.success();
+                return source == AutomaticUpdateSource.TIMER
+                        && WorkerManager.isAutomaticSourceCurrent(
+                        getApplicationContext(), source, triggerDate)
+                        ? Result.retry()
+                        : Result.success();
             }
         }
-        mSetWallpaperDelegate.setWallpaper(Wallpaper.to(map), config, true);
+        if (!automatic && config.isBackground()) {
+            return Result.success();
+        }
+        AutomaticUpdateResult updateResult = mSetWallpaperDelegate.setWallpaper(Wallpaper.to(map), config, true,
+                automatic ? () -> WorkerManager.isAutomaticSourceCurrent(
+                        getApplicationContext(), source, triggerDate) : null);
+        if (source == AutomaticUpdateSource.TIMER
+                && WorkerManager.isAutomaticSourceCurrent(getApplicationContext(), source, triggerDate)) {
+            boolean taskUndone = updateResult == AutomaticUpdateResult.APPLIED
+                    && BingWallpaperUtils.isTaskUndone(getApplicationContext());
+            if (updateResult.shouldRetryTimer(taskUndone)) {
+                return Result.retry();
+            }
+        }
         return Result.success();
     }
 }

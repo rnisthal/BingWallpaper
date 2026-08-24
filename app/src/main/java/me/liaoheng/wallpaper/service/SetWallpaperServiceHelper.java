@@ -4,6 +4,8 @@ import android.content.Context;
 
 import com.github.liaoheng.common.util.L;
 
+import org.joda.time.LocalDate;
+
 import me.liaoheng.wallpaper.model.BingWallpaperState;
 import me.liaoheng.wallpaper.model.Config;
 import me.liaoheng.wallpaper.model.Wallpaper;
@@ -60,25 +62,51 @@ public class SetWallpaperServiceHelper {
         NotificationUtils.showFailureNotification(mContext);
     }
 
-    public void success(Config config, Wallpaper image) {
+    public void success(Config config, Wallpaper image, boolean completeDay) {
         L.alog().i(TAG, "set wallpaper success");
         new Thread(() -> {
             if (Settings.isEnableLogProvider(mContext)) {
                 LogDebugFileUtils.get().i(TAG, "Set wallpaper success");
             }
-            if (config.isBackground()) {
-                if (!Settings.getLastWallpaperImageUrl(mContext).equals(image.getImageUrl())) {
-                    BingWallpaperUtils.taskComplete(mContext, TAG);
-                    showSuccessNotification(image, Settings.isAutomaticUpdateNotification(mContext));
-                    Settings.setLastWallpaperImageUrl(mContext, image.getImageUrl());
-                }
-            } else {
-                showSuccessNotification(image, config.isShowNotification());
-            }
         }).start();
+        if (config.isBackground()) {
+            try {
+                Settings.setWallpaperSuccessAsync(image.getImageUrl(), image.getBaseUrl(),
+                                completeDay ? LocalDate.now().toString() : "")
+                        .blockingAwait();
+                if (completeDay) {
+                    BingWallpaperUtils.taskComplete(mContext, TAG);
+                }
+            } catch (Throwable throwable) {
+                throw new PersistenceException(throwable);
+            }
+            showSuccessNotification(image, Settings.isAutomaticUpdateNotification(mContext));
+        } else {
+            showSuccessNotification(image, config.isShowNotification());
+        }
         AppWidget_5x2.start(mContext, image);
         AppWidget_5x1.start(mContext, image);
         sendSetWallpaperBroadcast(BingWallpaperState.SUCCESS);
+    }
+
+    public void success(Config config, Wallpaper image) {
+        success(config, image, false);
+    }
+
+    public void unchanged() {
+        NotificationUtils.clearStartNotification(mContext);
+        sendSetWallpaperBroadcast(BingWallpaperState.SUCCESS);
+    }
+
+    public void unchanged(Wallpaper image) {
+        try {
+            if (image != null && Settings.wasWallpaperApplied(image.getBaseUrl(), LocalDate.now().toString())) {
+                BingWallpaperUtils.taskComplete(mContext, TAG);
+            }
+        } catch (Throwable throwable) {
+            throw new PersistenceException(throwable);
+        }
+        unchanged();
     }
 
     private void showSuccessNotification(Wallpaper image, boolean isShow) {
@@ -91,6 +119,12 @@ public class SetWallpaperServiceHelper {
 
     public void sendSetWallpaperBroadcast(BingWallpaperState state) {
         SetWallpaperStateBroadcastReceiverHelper.sendSetWallpaperBroadcast(mContext, state);
+    }
+
+    public static final class PersistenceException extends RuntimeException {
+        PersistenceException(Throwable cause) {
+            super(cause);
+        }
     }
 
 }

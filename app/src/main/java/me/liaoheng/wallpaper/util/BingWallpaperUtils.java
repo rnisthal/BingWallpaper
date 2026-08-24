@@ -324,6 +324,26 @@ public class BingWallpaperUtils {
         return DateTimeUtils.checkTimeToNextDay(time);
     }
 
+    public static boolean isAtOrAfterEarliestTime(LocalTime now, LocalTime earliest) {
+        return !now.isBefore(earliest);
+    }
+
+    public static boolean isAutomaticUpdateEligible(Context context) {
+        return Settings.isAutomaticUpdateEnabled(context)
+                && isAtOrAfterEarliestTime(LocalTime.now(), getDayUpdateTime(context))
+                && isTaskUndone(context);
+    }
+
+    public static boolean legacyUrlMatchesBase(String legacyUrl, String baseUrl) {
+        return !TextUtils.isEmpty(legacyUrl) && !TextUtils.isEmpty(baseUrl)
+                && legacyUrl.contains(baseUrl + "_");
+    }
+
+    public static boolean shouldCompleteDay(String storedBaseUrl, String candidateBaseUrl) {
+        return !TextUtils.isEmpty(storedBaseUrl) && !TextUtils.isEmpty(candidateBaseUrl)
+                && !storedBaseUrl.equals(candidateBaseUrl);
+    }
+
     public static void showSaveWallpaperDialog(Context context, YNCallback callback) {
         UIUtils.showYNAlertDialog(context, context.getString(R.string.menu_save_wallpaper) + "?",
                 callback);
@@ -638,6 +658,14 @@ public class BingWallpaperUtils {
 
     public static boolean checkRunning(Context context, String TAG) {
         boolean enableLog = Settings.isEnableLogProvider(context);
+        if (!Settings.isAutomaticUpdateEnabled(context)) {
+            L.alog().d(TAG, "automatic update disabled");
+            return false;
+        }
+        if (!isAtOrAfterEarliestTime(LocalTime.now(), getDayUpdateTime(context))) {
+            L.alog().d(TAG, "before earliest update time");
+            return false;
+        }
         if (isConnected(context)) {
             if (Settings.getOnlyWifi(context)) {
                 if (!NetworkUtils.isWifiConnected(context)) {

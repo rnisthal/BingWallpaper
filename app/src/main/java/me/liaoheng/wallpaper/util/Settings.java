@@ -6,8 +6,13 @@ import androidx.annotation.IntDef;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
+import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.functions.Action;
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.ui.SettingsActivity;
 
@@ -16,6 +21,38 @@ import me.liaoheng.wallpaper.ui.SettingsActivity;
  * @version 2020-07-03 16:35
  */
 public class Settings {
+
+    private static final Object AUTOMATIC_UPDATE_LOCK = new Object();
+
+    public static boolean isAutomaticUpdateEnabled(Context context) {
+        return SettingTrayPreferences.get(context)
+                .getBoolean(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, false);
+    }
+
+    public static Completable setAutomaticUpdateEnabled(boolean enabled) {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, enabled));
+    }
+
+    public static Completable setAutomaticUpdateType(int type) {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE, String.valueOf(type)));
+    }
+
+    public static Completable setAutomaticUpdateInterval(int hours) {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL, String.valueOf(hours)));
+    }
+
+    public static Completable setAutomaticUpdateTime(String time) {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_TIME, time));
+    }
+
+    public static Completable setOnlyWifi(boolean onlyWifi) {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI, onlyWifi));
+    }
 
     public static boolean isCrashReport(Context context) {
         return SettingTrayPreferences.get(context).getBoolean(SettingsActivity.PREF_CRASH_REPORT, true);
@@ -166,6 +203,39 @@ public class Settings {
         SettingTrayPreferences.get(context).put(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, url);
     }
 
+    public static Completable setLastWallpaperImageUrlAsync(String url) {
+        return SettingTrayPreferences.get().putStringAsync(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, url);
+    }
+
+    private static final String LAST_WALLPAPER_BASE_URL = "last_wallpaper_base_url";
+    private static final String LAST_WALLPAPER_APPLIED_DATE = "last_wallpaper_applied_date";
+
+    public static Completable setLastWallpaperBaseUrlAsync(String baseUrl) {
+        return SettingTrayPreferences.get().putStringAsync(LAST_WALLPAPER_BASE_URL, baseUrl);
+    }
+
+    public static Completable setWallpaperSuccessAsync(String imageUrl, String baseUrl, String appliedDate) {
+        Map<String, String> values = new HashMap<>();
+        values.put(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, imageUrl);
+        values.put(LAST_WALLPAPER_BASE_URL, baseUrl);
+        values.put(LAST_WALLPAPER_APPLIED_DATE, appliedDate);
+        return SettingTrayPreferences.get().putStringsAsync(values);
+    }
+
+    public static boolean wasWallpaperApplied(String baseUrl, String date) {
+        return wasWallpaperApplied(baseUrl,
+                SettingTrayPreferences.get().getString(LAST_WALLPAPER_BASE_URL, ""), date,
+                SettingTrayPreferences.get().getString(LAST_WALLPAPER_APPLIED_DATE, ""));
+    }
+
+    static boolean wasWallpaperApplied(String baseUrl, String storedBaseUrl, String date, String storedDate) {
+        return Objects.equals(baseUrl, storedBaseUrl) && Objects.equals(date, storedDate);
+    }
+
+    public static String getLastWallpaperBaseUrl(Context context) {
+        return SettingTrayPreferences.get(context).getString(LAST_WALLPAPER_BASE_URL, "");
+    }
+
     public static String getLastWallpaperImageUrl(Context context) {
         return SettingTrayPreferences.get(context).getString(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, "");
     }
@@ -195,9 +265,82 @@ public class Settings {
 
     public static final String BING_WALLPAPER_JOB_TYPE = "bing_wallpaper_job_type";
     public static final String LIVE_WALLPAPER_HEART_BEAT = "live_wallpaper_heart_beat";
+    private static final String LIVE_CHOOSER_RESULT = "automatic_live_chooser_result";
+    private static final String TIMER_ALARM_TRIGGER_AT = "timer_alarm_trigger_at";
+    private static final String AUTOMATIC_SCHEDULER_FINGERPRINT = "automatic_scheduler_fingerprint";
+
+    public static Completable setLiveChooserResult(int result) {
+        return writeAutomaticState(SettingTrayPreferences.get().putIntAsync(LIVE_CHOOSER_RESULT, result));
+    }
+
+    public static int getLiveChooserResult() {
+        return SettingTrayPreferences.get().getInt(LIVE_CHOOSER_RESULT, 0);
+    }
+
+    public static Completable setTimerAlarmTriggerAt(long triggerAt) {
+        return SettingTrayPreferences.get().putStringAsync(TIMER_ALARM_TRIGGER_AT,
+                String.valueOf(triggerAt));
+    }
+
+    public static long getTimerAlarmTriggerAt() {
+        try {
+            return Long.parseLong(SettingTrayPreferences.get().getString(TIMER_ALARM_TRIGGER_AT, "0"));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    public static Completable setSchedulerFingerprint(Context context, @JobType int jobType) {
+        return writeAutomaticState(SettingTrayPreferences.get().putStringAsync(
+                AUTOMATIC_SCHEDULER_FINGERPRINT, schedulerFingerprint(context, jobType)));
+    }
+
+    public static Completable clearSchedulerFingerprint() {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(AUTOMATIC_SCHEDULER_FINGERPRINT, ""));
+    }
+
+    public static boolean isSchedulerFingerprintCurrent(Context context, @JobType int jobType) {
+        return Objects.equals(schedulerFingerprint(context, jobType),
+                SettingTrayPreferences.get().getString(AUTOMATIC_SCHEDULER_FINGERPRINT, ""));
+    }
+
+    private static String schedulerFingerprint(Context context, @JobType int jobType) {
+        String fingerprint = jobType + "|" + getAutomaticUpdateType(context) + "|"
+                + BingWallpaperUtils.getDayUpdateTime(context) + "|" + getOnlyWifi(context);
+        return jobType == WORKER ? fingerprint + "|" + getAutomaticUpdateInterval(context) : fingerprint;
+    }
 
     public static void setJobType(Context context, @JobType int type) {
-        SettingTrayPreferences.get(context).put(BING_WALLPAPER_JOB_TYPE, type);
+        setJobTypeAsync(type).blockingAwait();
+    }
+
+    public static Completable setJobTypeAsync(@JobType int type) {
+        return writeAutomaticState(SettingTrayPreferences.get().putIntAsync(BING_WALLPAPER_JOB_TYPE, type));
+    }
+
+    private static Completable writeAutomaticState(Completable write) {
+        return Completable.fromAction(() -> {
+            synchronized (AUTOMATIC_UPDATE_LOCK) {
+                write.blockingAwait();
+            }
+        });
+    }
+
+    public static boolean runIfAutomaticUpdateCurrent(BooleanSupplier condition, Action action) throws Throwable {
+        synchronized (AUTOMATIC_UPDATE_LOCK) {
+            if (!condition.getAsBoolean()) {
+                return false;
+            }
+            action.run();
+            return true;
+        }
+    }
+
+    public static void runAutomaticUpdateTransition(Action action) throws Throwable {
+        synchronized (AUTOMATIC_UPDATE_LOCK) {
+            action.run();
+        }
     }
 
     @JobType
