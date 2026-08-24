@@ -95,12 +95,12 @@ public class TasksUtils {
     }
 
     /**
-     * 上一次操作与现在操作的距离，单位天
+     * Checks the calendar-day distance between the previous operation and now.
      *
-     * @param next local date
-     * @param now  local date
-     * @param day  距离，天
-     * @return true，超过或等于@param day
+     * @param next previous operation time
+     * @param now  current time
+     * @param day  required calendar-day distance
+     * @return true when the clock moved backward or the distance is at least {@code day}
      */
     public static boolean isToDaysDo(DateTime next, DateTime now, int day) {
         int days = Days.daysBetween(next.toLocalDate(), now.toLocalDate()).getDays();
