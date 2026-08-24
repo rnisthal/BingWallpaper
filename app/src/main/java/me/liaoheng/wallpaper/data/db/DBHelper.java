@@ -82,6 +82,10 @@ public class DBHelper extends SQLiteOpenHelper {
                     while (query.moveToNext()) {
                         String key = query.getString(query.getColumnIndexOrThrow(TrayDBHelper.KEY));
                         String value = query.getString(query.getColumnIndexOrThrow(TrayDBHelper.VALUE));
+                        if (value == null) {
+                            L.alog().w("toChangeDataStore", "skip null legacy value for key: %s", key);
+                            continue;
+                        }
                         L.alog().w("toChangeDataStore", "key: " + key + "  value: " + value);
                         try {
                             switch (key) {
