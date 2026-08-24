@@ -1,6 +1,9 @@
 package me.liaoheng.wallpaper;
 
 import android.app.Application;
+import android.app.ActivityManager;
+import android.os.Build;
+import android.os.Process;
 
 import androidx.annotation.NonNull;
 import androidx.startup.AppInitializer;
@@ -15,6 +18,7 @@ import net.danlew.android.joda.JodaTimeInitializer;
 import io.reactivex.rxjava3.plugins.RxJavaPlugins;
 import me.liaoheng.wallpaper.data.db.DBHelper;
 import me.liaoheng.wallpaper.util.CacheUtils;
+import me.liaoheng.wallpaper.util.BingWallpaperJobManager;
 import me.liaoheng.wallpaper.util.Constants;
 import me.liaoheng.wallpaper.util.CrashReportHandle;
 import me.liaoheng.wallpaper.util.LogDebugFileUtils;
@@ -39,6 +43,9 @@ public class MApplication extends Application implements Configuration.Provider 
         SettingTrayPreferences.init(getApplicationContext());
         LogDebugFileUtils.init(getApplicationContext());
         TasksUtils.init(getApplicationContext());
+        if (isMainProcess()) {
+            new Thread(() -> BingWallpaperJobManager.reconcile(getApplicationContext())).start();
+        }
         new Thread(() -> {
             NetUtils.get().init(getApplicationContext());
             CacheUtils.init(getApplicationContext());
@@ -49,6 +56,22 @@ public class MApplication extends Application implements Configuration.Provider 
         Constants.Config.isPhone = getString(R.string.screen_type).equals("phone");
 
         NotificationUtils.createNotificationChannels(this);
+    }
+
+    private boolean isMainProcess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return getPackageName().equals(Application.getProcessName());
+        }
+        ActivityManager manager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        if (manager == null) {
+            return false;
+        }
+        for (ActivityManager.RunningAppProcessInfo process : manager.getRunningAppProcesses()) {
+            if (process.pid == Process.myPid()) {
+                return getPackageName().equals(process.processName);
+            }
+        }
+        return false;
     }
 
     @NonNull

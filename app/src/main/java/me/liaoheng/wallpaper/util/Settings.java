@@ -35,23 +35,23 @@ public class Settings {
     }
 
     public static Completable setAutomaticUpdateType(int type) {
-        return SettingTrayPreferences.get()
-                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE, String.valueOf(type));
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE, String.valueOf(type)));
     }
 
     public static Completable setAutomaticUpdateInterval(int hours) {
-        return SettingTrayPreferences.get()
-                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL, String.valueOf(hours));
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL, String.valueOf(hours)));
     }
 
     public static Completable setAutomaticUpdateTime(String time) {
-        return SettingTrayPreferences.get()
-                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_TIME, time);
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_TIME, time));
     }
 
     public static Completable setOnlyWifi(boolean onlyWifi) {
-        return SettingTrayPreferences.get()
-                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI, onlyWifi);
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI, onlyWifi));
     }
 
     public static boolean isCrashReport(Context context) {
@@ -293,6 +293,12 @@ public class Settings {
             }
             action.run();
             return true;
+        }
+    }
+
+    public static void runAutomaticUpdateTransition(Action action) throws Throwable {
+        synchronized (AUTOMATIC_UPDATE_LOCK) {
+            action.run();
         }
     }
 

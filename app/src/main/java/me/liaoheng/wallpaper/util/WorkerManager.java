@@ -51,6 +51,22 @@ public class WorkerManager {
         cancelTimer(context);
     }
 
+    public static boolean disabledAndAwait(Context context) {
+        try {
+            WorkManager manager = WorkManager.getInstance(context);
+            manager.cancelUniqueWork(PERIODIC_WORK_NAME).getResult().get();
+            manager.cancelUniqueWork(LEGACY_PERIODIC_WORK_NAME).getResult().get();
+            manager.cancelAllWorkByTag(TIMER_WORK_TAG).getResult().get();
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            L.alog().w("WorkerManager", exception, "disable work interrupted");
+        } catch (Throwable throwable) {
+            L.alog().w("WorkerManager", throwable, "disable work error");
+        }
+        return false;
+    }
+
     public static void cancelPeriodic(Context context) {
         WorkManager manager = WorkManager.getInstance(context);
         manager.cancelUniqueWork(PERIODIC_WORK_NAME);

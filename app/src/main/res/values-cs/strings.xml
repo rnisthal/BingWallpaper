@@ -40,6 +40,7 @@
     <!--pref_set_wallpaper_daily_update_interval_summary-->
     <string name="pref_auto_update_check_time">Zkontrolovat každých %1$d hodin</string>
     <string name="pref_set_wallpaper_daily_update_time">Čas spuštění časovače</string>
+    <string name="pref_set_wallpaper_earliest_update_time">Čas spuštění časovače</string>
     <string name="pref_set_wallpaper_daily_update_success_notification">Oznámení o úspěchu</string>
     <string name="pref_set_wallpaper_daily_update_success_notification_summary">Po úspěšné aktualizaci na pozadí</string>
     <string name="pref_set_wallpaper_day_fully_automatic_update_type_auto">Optimální</string>

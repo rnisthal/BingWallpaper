@@ -124,7 +124,7 @@ public class SetWallpaperDelegate {
             return AutomaticUpdateResult.APPLIED;
         } catch (Throwable e) {
             failure(config, e);
-            return e instanceof IOException
+            return e instanceof IOException || e instanceof SetWallpaperServiceHelper.PersistenceException
                     ? AutomaticUpdateResult.RETRYABLE_FAILURE
                     : AutomaticUpdateResult.FAILURE;
         }

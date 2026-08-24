@@ -70,11 +70,15 @@ public class SetWallpaperServiceHelper {
             }
         }).start();
         if (config.isBackground()) {
-            Settings.setWallpaperSuccessAsync(image.getImageUrl(), image.getBaseUrl(),
-                            completeDay ? LocalDate.now().toString() : "")
-                    .blockingAwait();
-            if (completeDay) {
-                BingWallpaperUtils.taskComplete(mContext, TAG);
+            try {
+                Settings.setWallpaperSuccessAsync(image.getImageUrl(), image.getBaseUrl(),
+                                completeDay ? LocalDate.now().toString() : "")
+                        .blockingAwait();
+                if (completeDay) {
+                    BingWallpaperUtils.taskComplete(mContext, TAG);
+                }
+            } catch (Throwable throwable) {
+                throw new PersistenceException(throwable);
             }
             showSuccessNotification(image, Settings.isAutomaticUpdateNotification(mContext));
         } else {
@@ -111,6 +115,12 @@ public class SetWallpaperServiceHelper {
 
     public void sendSetWallpaperBroadcast(BingWallpaperState state) {
         SetWallpaperStateBroadcastReceiverHelper.sendSetWallpaperBroadcast(mContext, state);
+    }
+
+    public static final class PersistenceException extends RuntimeException {
+        PersistenceException(Throwable cause) {
+            super(cause);
+        }
     }
 
 }

@@ -16,6 +16,8 @@ import org.joda.time.LocalTime;
 import org.joda.time.LocalDate;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.service.LiveWallpaperService;
@@ -34,13 +36,26 @@ public class BingWallpaperJobManager {
 
     public static void disabled(Context context, boolean force) {
         try {
-            Settings.setJobTypeAsync(Settings.NONE).blockingAwait();
+            Settings.runAutomaticUpdateTransition(() -> {
+                Throwable stateFailure = null;
+                try {
+                    Settings.setJobTypeAsync(Settings.NONE).blockingAwait();
+                } catch (Throwable throwable) {
+                    stateFailure = throwable;
+                }
+                boolean workDisabled = WorkerManager.disabledAndAwait(context);
+                BingWallpaperAlarmManager.disabled(context);
+                setLivePolling(context, false);
+                if (stateFailure != null) {
+                    throw stateFailure;
+                }
+                if (!workDisabled) {
+                    throw new IllegalStateException("disable automatic work failed");
+                }
+            });
         } catch (Throwable throwable) {
             L.alog().w(TAG, throwable, "disable job state failure");
         }
-        WorkerManager.disabled(context);
-        BingWallpaperAlarmManager.disabled(context);
-        setLivePolling(context, false);
     }
 
     @Deprecated
@@ -50,6 +65,14 @@ public class BingWallpaperJobManager {
 
     public static int enabled(Context context) {
         int ret = enabledJob(context);
+        if (ret == PENDING_LIVE) {
+            try {
+                startLiveService(context);
+            } catch (Throwable throwable) {
+                L.alog().w(TAG, throwable, "start live wallpaper chooser failure");
+                ret = Settings.NONE;
+            }
+        }
         if (ret == Settings.NONE) {
             Toast.makeText(context, R.string.enable_job_error, Toast.LENGTH_LONG).show();
         }
@@ -58,6 +81,18 @@ public class BingWallpaperJobManager {
 
     @Settings.JobType
     public static int enabledJob(Context context) {
+        AtomicInteger result = new AtomicInteger(Settings.NONE);
+        try {
+            Settings.runIfAutomaticUpdateCurrent(
+                    () -> Settings.isAutomaticUpdateEnabled(context),
+                    () -> result.set(enabledJobLocked(context)));
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "enable job transition failure");
+        }
+        return result.get();
+    }
+
+    private static int enabledJobLocked(Context context) {
         try {
             int type = Settings.getAutomaticUpdateType(context);
             if (type == Settings.AUTOMATIC_UPDATE_TYPE_AUTO) {
@@ -99,6 +134,19 @@ public class BingWallpaperJobManager {
     }
 
     public static boolean enableSystem(Context context) {
+        AtomicBoolean enabled = new AtomicBoolean(false);
+        try {
+            boolean current = Settings.runIfAutomaticUpdateCurrent(
+                    () -> Settings.isAutomaticUpdateEnabled(context),
+                    () -> enabled.set(enableSystemLocked(context)));
+            return current && enabled.get();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "enable worker transition failure");
+            return false;
+        }
+    }
+
+    private static boolean enableSystemLocked(Context context) {
         long time = TimeUnit.HOURS.toSeconds(Settings.getAutomaticUpdateInterval(context));
         int previousJobType = Settings.getJobType(context);
         try {
@@ -125,6 +173,19 @@ public class BingWallpaperJobManager {
     }
 
     public static boolean enableTimer(Context context) {
+        AtomicBoolean enabled = new AtomicBoolean(false);
+        try {
+            boolean current = Settings.runIfAutomaticUpdateCurrent(
+                    () -> Settings.isAutomaticUpdateEnabled(context),
+                    () -> enabled.set(enableTimerLocked(context)));
+            return current && enabled.get();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "enable timer transition failure");
+            return false;
+        }
+    }
+
+    private static boolean enableTimerLocked(Context context) {
         LocalTime updateTime = BingWallpaperUtils.getDayUpdateTime(context);
         int previousJobType = Settings.getJobType(context);
         try {
@@ -171,14 +232,21 @@ public class BingWallpaperJobManager {
         }
         try {
             if (isLiveWallpaperActive(context)) {
-                Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
-                WorkerManager.disabled(context);
-                BingWallpaperAlarmManager.disabled(context);
-                setLivePolling(context, true);
-                return Settings.LIVE_WALLPAPER;
+                AtomicBoolean enabled = new AtomicBoolean(false);
+                boolean current = Settings.runIfAutomaticUpdateCurrent(
+                        () -> Settings.isAutomaticUpdateEnabled(context), () -> {
+                            Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
+                            WorkerManager.disabled(context);
+                            BingWallpaperAlarmManager.disabled(context);
+                            setLivePolling(context, true);
+                            enabled.set(true);
+                        });
+                return current && enabled.get() ? Settings.LIVE_WALLPAPER : Settings.NONE;
             }
-            startLiveService(context);
-            return PENDING_LIVE;
+            AtomicBoolean pending = new AtomicBoolean(false);
+            Settings.runIfAutomaticUpdateCurrent(
+                    () -> Settings.isAutomaticUpdateEnabled(context), () -> pending.set(true));
+            return pending.get() ? PENDING_LIVE : Settings.NONE;
         } catch (Throwable ignored) {
         }
         return Settings.NONE;
@@ -202,18 +270,12 @@ public class BingWallpaperJobManager {
     public static void onActivityResult(Context context, int requestCode, int resultCode, YNCallback callback) {
         if (requestCode == LIVE_WALLPAPER_REQUEST_CODE) {
             if (Activity.RESULT_OK == resultCode && isLiveWallpaperActive(context)) {
-                try {
-                    Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
-                } catch (Throwable throwable) {
-                    L.alog().w(TAG, throwable, "persist live state failure");
+                if (enableLiveService(context) != Settings.LIVE_WALLPAPER) {
                     if (callback != null) {
                         callback.onDeny();
                     }
                     return;
                 }
-                WorkerManager.disabled(context);
-                BingWallpaperAlarmManager.disabled(context);
-                setLivePolling(context, true);
                 new Thread(() -> {
                     if (Settings.isEnableLog(context)) {
                         LogDebugFileUtils.get().i(TAG, "Enable live wallpaper");
@@ -306,6 +368,20 @@ public class BingWallpaperJobManager {
         }
         disabled(context);
         return jobType == Settings.NONE;
+    }
+
+    public static void reconcile(Context context) {
+        if (!Settings.isAutomaticUpdateEnabled(context)) {
+            disabled(context);
+            return;
+        }
+        int jobType = Settings.getJobType(context);
+        boolean restored = jobType == Settings.WORKER && enableSystem(context)
+                || jobType == Settings.TIMER && enableTimer(context)
+                || jobType == Settings.LIVE_WALLPAPER && restore(context, jobType);
+        if (!restored) {
+            L.alog().w(TAG, "automatic scheduler reconciliation failed for job type : %s", jobType);
+        }
     }
 
     public static void setLivePolling(Context context, boolean enabled) {
