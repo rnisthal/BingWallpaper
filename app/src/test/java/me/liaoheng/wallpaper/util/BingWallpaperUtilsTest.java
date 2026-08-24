@@ -70,9 +70,10 @@ public class BingWallpaperUtilsTest extends BaseTest {
     }
 
     @Test
-    public void activeWorkStatesAreRunningOrEnqueuedOnly() {
+    public void unfinishedWorkStatesAreActive() {
         assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.ENQUEUED));
         assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.RUNNING));
+        assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.BLOCKED));
         assertFalse(WorkerManager.isActiveWorkState(WorkInfo.State.CANCELLED));
     }
 

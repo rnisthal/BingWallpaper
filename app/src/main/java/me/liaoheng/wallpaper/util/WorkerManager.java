@@ -227,6 +227,6 @@ public class WorkerManager {
     }
 
     static boolean isActiveWorkState(WorkInfo.State state) {
-        return state == WorkInfo.State.RUNNING || state == WorkInfo.State.ENQUEUED;
+        return !state.isFinished();
     }
 }
