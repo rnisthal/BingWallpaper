@@ -32,11 +32,18 @@ public class BingWallpaperAlarmManager {
     public static void disabled(Context context) {
         PendingIntent pendingIntent = getPendingIntent(context);
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        Settings.setTimerAlarmTriggerAt(0).blockingAwait();
-        if (alarmManager == null) {
-            return;
+        Throwable persistenceFailure = null;
+        try {
+            Settings.setTimerAlarmTriggerAt(0).blockingAwait();
+        } catch (Throwable throwable) {
+            persistenceFailure = throwable;
         }
-        alarmManager.cancel(pendingIntent);
+        if (alarmManager != null) {
+            alarmManager.cancel(pendingIntent);
+        }
+        if (persistenceFailure != null) {
+            throw new IllegalStateException("clear timer alarm state failure", persistenceFailure);
+        }
     }
 
     public static boolean enabled(Context context, @NonNull LocalTime localTime) {
@@ -78,7 +85,12 @@ public class BingWallpaperAlarmManager {
             return false;
         }
         alarmManager.set(AlarmManager.RTC_WAKEUP, time.getMillis(), pendingIntent);
-        Settings.setTimerAlarmTriggerAt(time.getMillis()).blockingAwait();
+        try {
+            Settings.setTimerAlarmTriggerAt(time.getMillis()).blockingAwait();
+        } catch (Throwable throwable) {
+            alarmManager.cancel(pendingIntent);
+            throw new IllegalStateException("persist timer alarm state failure", throwable);
+        }
         return true;
     }
 

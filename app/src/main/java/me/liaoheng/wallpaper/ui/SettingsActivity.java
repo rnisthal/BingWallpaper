@@ -101,18 +101,29 @@ public class SettingsActivity extends BaseActivity {
 
             @Override
             public void onAllow() {
-                Settings.setLiveChooserResult(1).blockingAwait();
-                intent.putExtra("enable", true);
-                LocalBroadcastManager.getInstance(appContext).sendBroadcast(intent);
+                publishLiveChooserResult(appContext, intent, true);
             }
 
             @Override
             public void onDeny() {
-                Settings.setLiveChooserResult(2).blockingAwait();
-                intent.putExtra("enable", false);
-                LocalBroadcastManager.getInstance(appContext).sendBroadcast(intent);
+                publishLiveChooserResult(appContext, intent, false);
             }
         }));
+    }
+
+    private void publishLiveChooserResult(Context context, Intent intent, boolean enabled) {
+        boolean durable = true;
+        try {
+            Settings.setLiveChooserResult(enabled ? 1 : 2).blockingAwait();
+        } catch (Throwable throwable) {
+            durable = false;
+            try {
+                Settings.setLiveChooserResult(2).blockingAwait();
+            } catch (Throwable ignored) {
+            }
+        }
+        intent.putExtra("enable", durable && enabled);
+        LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
     }
 
     @Override
@@ -171,6 +182,7 @@ public class SettingsActivity extends BaseActivity {
         private static final int PHASE_LIVE = 1;
         private static final int PHASE_ROLLBACK = 2;
         private static final int PHASE_DISABLE = 3;
+        private static final int PHASE_FALLBACK = 4;
         private int mAutomaticPhase = PHASE_APPLY;
         private Context mAutomaticContext;
 
@@ -591,6 +603,7 @@ public class SettingsActivity extends BaseActivity {
         }
 
         private void applyLiveFallback() {
+            mAutomaticPhase = PHASE_FALLBACK;
             mAutomaticDisposables.add(Single.fromCallable(
                             () -> BingWallpaperJobManager.enableAutomaticFallback(mAutomaticContext))
                     .subscribeOn(Schedulers.io())
@@ -800,6 +813,8 @@ public class SettingsActivity extends BaseActivity {
                 failClosedAutomaticChange();
             } else if (mAutomaticPhase == PHASE_LIVE) {
                 readPendingLiveResult();
+            } else if (mAutomaticPhase == PHASE_FALLBACK) {
+                applyLiveFallback();
             }
         }
 

@@ -65,6 +65,9 @@ public class BingWallpaperWorker extends Worker {
                         : Result.success();
             }
         }
+        if (!automatic && config.isBackground()) {
+            return Result.success();
+        }
         AutomaticUpdateResult updateResult = mSetWallpaperDelegate.setWallpaper(Wallpaper.to(map), config, true,
                 automatic ? () -> WorkerManager.isAutomaticSourceCurrent(
                         getApplicationContext(), source, triggerDate) : null);

@@ -5,6 +5,9 @@ import android.app.ActivityManager;
 import android.os.Build;
 import android.os.Process;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
+
 import androidx.annotation.NonNull;
 import androidx.startup.AppInitializer;
 import androidx.work.Configuration;
@@ -72,15 +75,26 @@ public class MApplication extends Application implements Configuration.Provider 
             return getPackageName().equals(Application.getProcessName());
         }
         ActivityManager manager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
-        if (manager == null) {
-            return false;
-        }
-        for (ActivityManager.RunningAppProcessInfo process : manager.getRunningAppProcesses()) {
-            if (process.pid == Process.myPid()) {
-                return getPackageName().equals(process.processName);
+        if (manager != null) {
+            java.util.List<ActivityManager.RunningAppProcessInfo> processes = manager.getRunningAppProcesses();
+            if (processes != null) {
+                for (ActivityManager.RunningAppProcessInfo process : processes) {
+                    if (process.pid == Process.myPid()) {
+                        return getPackageName().equals(process.processName);
+                    }
+                }
             }
         }
-        return false;
+        try (BufferedReader reader = new BufferedReader(new FileReader("/proc/self/cmdline"))) {
+            String processName = reader.readLine();
+            if (processName != null) {
+                int terminator = processName.indexOf('\0');
+                return getPackageName().equals(
+                        terminator >= 0 ? processName.substring(0, terminator) : processName);
+            }
+        } catch (Throwable ignored) {
+        }
+        return getPackageName().equals(getApplicationInfo().processName);
     }
 
     @NonNull

@@ -53,33 +53,53 @@ public class AutoSetWallpaperBroadcastReceiver extends BroadcastReceiver {
                 AppWidget_5x1.start(context, null);
                 AppWidget_5x2.start(context, null);
             }
-            if (Settings.isAutomaticUpdateEnabled(context)
-                    && Settings.getJobType(context) == Settings.TIMER) {
-                if (!BingWallpaperJobManager.enableTimer(context)) {
-                    BingWallpaperAlarmManager.scheduleRetry(context);
-                }
+            try {
+                Settings.runIfAutomaticUpdateCurrent(
+                        () -> Settings.isAutomaticUpdateEnabled(context)
+                                && Settings.getJobType(context) == Settings.TIMER, () -> {
+                    if (!BingWallpaperJobManager.enableTimer(context)) {
+                        BingWallpaperAlarmManager.scheduleRetry(context);
+                    }
+                });
+            } catch (Throwable throwable) {
+                L.alog().w(TAG, throwable, "Timer restoration failure");
+                scheduleRetryIfCurrent(context);
             }
             return;
         }
         if (ACTION.equals(action)
-                && Settings.isAutomaticUpdateEnabled(context)
-                && Settings.getJobType(context) == Settings.TIMER) {
-            L.alog().d(TAG, "timer : %s", action);
-            if (Settings.isEnableLog(context)) {
-                LogDebugFileUtils.get().i(TAG, "timer : %s", action);
-            }
+                && Settings.isAutomaticUpdateEnabled(context)) {
             try {
-                WorkerManager.enqueueTimer(context, LocalDate.now(), false).getResult().get();
-                if (!BingWallpaperAlarmManager.scheduleNext(context)) {
-                    BingWallpaperAlarmManager.scheduleRetry(context);
-                }
+                Settings.runIfAutomaticUpdateCurrent(
+                        () -> Settings.isAutomaticUpdateEnabled(context)
+                                && Settings.getJobType(context) == Settings.TIMER, () -> {
+                    L.alog().d(TAG, "timer : %s", action);
+                    if (Settings.isEnableLog(context)) {
+                        LogDebugFileUtils.get().i(TAG, "timer : %s", action);
+                    }
+                    WorkerManager.enqueueTimer(context, LocalDate.now(), false).getResult().get();
+                    if (!BingWallpaperAlarmManager.scheduleNext(context)) {
+                        BingWallpaperAlarmManager.scheduleRetry(context);
+                    }
+                });
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
-                BingWallpaperAlarmManager.scheduleRetry(context);
-            } catch (Exception exception) {
+                scheduleRetryIfCurrent(context);
+            } catch (Throwable exception) {
                 L.alog().w(TAG, exception, "timer enqueue failure");
-                BingWallpaperAlarmManager.scheduleRetry(context);
+                scheduleRetryIfCurrent(context);
             }
+        }
+    }
+
+    private void scheduleRetryIfCurrent(Context context) {
+        try {
+            Settings.runIfAutomaticUpdateCurrent(
+                    () -> Settings.isAutomaticUpdateEnabled(context)
+                            && Settings.getJobType(context) == Settings.TIMER,
+                    () -> BingWallpaperAlarmManager.scheduleRetry(context));
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "timer retry scheduling failure");
         }
     }
 }

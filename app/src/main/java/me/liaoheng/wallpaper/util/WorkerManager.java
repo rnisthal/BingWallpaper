@@ -77,6 +77,29 @@ public class WorkerManager {
         WorkManager.getInstance(context).cancelAllWorkByTag(TIMER_WORK_TAG);
     }
 
+    public static boolean cancelTimerAndAwait(Context context, LocalDate triggerDate) {
+        return awaitCancellation(WorkManager.getInstance(context)
+                .cancelUniqueWork(timerWorkName(triggerDate)), "cancel Timer work");
+    }
+
+    public static boolean cancelLegacyPeriodicAndAwait(Context context) {
+        return awaitCancellation(WorkManager.getInstance(context)
+                .cancelUniqueWork(LEGACY_PERIODIC_WORK_NAME), "cancel legacy periodic work");
+    }
+
+    private static boolean awaitCancellation(Operation operation, String action) {
+        try {
+            operation.getResult().get();
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            L.alog().w("WorkerManager", exception, "%s interrupted", action);
+        } catch (Throwable throwable) {
+            L.alog().w("WorkerManager", throwable, "%s failure", action);
+        }
+        return false;
+    }
+
     /**
      * @param time seconds
      */

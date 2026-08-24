@@ -271,6 +271,7 @@ public class Settings {
     public static final String LIVE_WALLPAPER_HEART_BEAT = "live_wallpaper_heart_beat";
     private static final String LIVE_CHOOSER_RESULT = "automatic_live_chooser_result";
     private static final String TIMER_ALARM_TRIGGER_AT = "timer_alarm_trigger_at";
+    private static final String AUTOMATIC_SCHEDULER_FINGERPRINT = "automatic_scheduler_fingerprint";
 
     public static Completable setLiveChooserResult(int result) {
         return writeAutomaticState(SettingTrayPreferences.get().putIntAsync(LIVE_CHOOSER_RESULT, result));
@@ -287,6 +288,27 @@ public class Settings {
 
     public static long getTimerAlarmTriggerAt() {
         return Long.parseLong(SettingTrayPreferences.get().getString(TIMER_ALARM_TRIGGER_AT, "0"));
+    }
+
+    public static Completable setSchedulerFingerprint(Context context, @JobType int jobType) {
+        return writeAutomaticState(SettingTrayPreferences.get().putStringAsync(
+                AUTOMATIC_SCHEDULER_FINGERPRINT, schedulerFingerprint(context, jobType)));
+    }
+
+    public static Completable clearSchedulerFingerprint() {
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putStringAsync(AUTOMATIC_SCHEDULER_FINGERPRINT, ""));
+    }
+
+    public static boolean isSchedulerFingerprintCurrent(Context context, @JobType int jobType) {
+        return Objects.equals(schedulerFingerprint(context, jobType),
+                SettingTrayPreferences.get().getString(AUTOMATIC_SCHEDULER_FINGERPRINT, ""));
+    }
+
+    private static String schedulerFingerprint(Context context, @JobType int jobType) {
+        String fingerprint = jobType + "|" + getAutomaticUpdateType(context) + "|"
+                + BingWallpaperUtils.getDayUpdateTime(context) + "|" + getOnlyWifi(context);
+        return jobType == WORKER ? fingerprint + "|" + getAutomaticUpdateInterval(context) : fingerprint;
     }
 
     public static void setJobType(Context context, @JobType int type) {

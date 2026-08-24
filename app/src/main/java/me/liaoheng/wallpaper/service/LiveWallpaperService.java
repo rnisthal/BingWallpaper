@@ -78,6 +78,7 @@ public class LiveWallpaperService extends WallpaperService {
     public static final String VIEW_LIVE_WALLPAPER = "me.liaoheng.wallpaper.VIEW_LIVE_WALLPAPER";
     public static final String ENABLE_LIVE_WALLPAPER = "me.liaoheng.wallpaper.ENABLE_LIVE_WALLPAPER";
     public static final String EXTRA_ENABLE_LIVE_WALLPAPER = "EXTRA_ENABLE_LIVE_WALLPAPER";
+    public static final String EXTRA_CONFIRMED_LIVE_STATE = "EXTRA_CONFIRMED_LIVE_STATE";
     public static final String UPDATE_LIVE_WALLPAPER = "me.liaoheng.wallpaper.UPDATE_LIVE_WALLPAPER";
     public static final String PERMISSION_UPDATE_LIVE_WALLPAPER = "me.liaoheng.wallpaper.permission.UPDATE_LIVE_WALLPAPER";
     private LiveWallpaperBroadcastReceiver mReceiver;
@@ -109,7 +110,7 @@ public class LiveWallpaperService extends WallpaperService {
                     disable();
                     mAutomaticPollingEnabled = enable;
                     if (enable) {
-                        enable();
+                        enable(intent.getBooleanExtra(EXTRA_CONFIRMED_LIVE_STATE, false));
                     }
                 }
                 if (isOrderedBroadcast()) {
@@ -143,6 +144,13 @@ public class LiveWallpaperService extends WallpaperService {
         ContextCompat.registerReceiver(this, mReceiver, intentFilter, PERMISSION_UPDATE_LIVE_WALLPAPER,
                 new Handler(getMainLooper()), ContextCompat.RECEIVER_NOT_EXPORTED);
         LocalBroadcastManager.getInstance(this).registerReceiver(mReceiver, intentFilter);
+        if (Settings.isAutomaticUpdateEnabled(this)
+                && Settings.getJobType(this) == Settings.LIVE_WALLPAPER) {
+            synchronized (mAutomaticDispatchLock) {
+                mAutomaticPollingEnabled = true;
+                enable(false);
+            }
+        }
     }
 
     @Override
@@ -165,12 +173,16 @@ public class LiveWallpaperService extends WallpaperService {
     private final AtomicBoolean mAutomaticUpdateRunning = new AtomicBoolean();
 
     public void enable() {
-        if (mPoolExecutor == null || !Settings.isAutomaticUpdateEnabled(this)
-                || Settings.getJobType(this) != Settings.LIVE_WALLPAPER) {
+        enable(false);
+    }
+
+    private void enable(boolean confirmed) {
+        if (mPoolExecutor == null || (!confirmed && (!Settings.isAutomaticUpdateEnabled(this)
+                || Settings.getJobType(this) != Settings.LIVE_WALLPAPER))) {
             return;
         }
         disable();
-        mScheduledFuture = mPoolExecutor.scheduleWithFixedDelay(checkRunnable, 500, mCheckPeriodic,
+        mScheduledFuture = mPoolExecutor.scheduleWithFixedDelay(checkRunnable, 2000, mCheckPeriodic,
                 TimeUnit.MILLISECONDS);
     }
 
