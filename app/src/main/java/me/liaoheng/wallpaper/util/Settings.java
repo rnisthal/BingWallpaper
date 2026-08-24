@@ -269,6 +269,25 @@ public class Settings {
 
     public static final String BING_WALLPAPER_JOB_TYPE = "bing_wallpaper_job_type";
     public static final String LIVE_WALLPAPER_HEART_BEAT = "live_wallpaper_heart_beat";
+    private static final String LIVE_CHOOSER_RESULT = "automatic_live_chooser_result";
+    private static final String TIMER_ALARM_TRIGGER_AT = "timer_alarm_trigger_at";
+
+    public static Completable setLiveChooserResult(int result) {
+        return writeAutomaticState(SettingTrayPreferences.get().putIntAsync(LIVE_CHOOSER_RESULT, result));
+    }
+
+    public static int getLiveChooserResult() {
+        return SettingTrayPreferences.get().getInt(LIVE_CHOOSER_RESULT, 0);
+    }
+
+    public static Completable setTimerAlarmTriggerAt(long triggerAt) {
+        return SettingTrayPreferences.get().putStringAsync(TIMER_ALARM_TRIGGER_AT,
+                String.valueOf(triggerAt));
+    }
+
+    public static long getTimerAlarmTriggerAt() {
+        return Long.parseLong(SettingTrayPreferences.get().getString(TIMER_ALARM_TRIGGER_AT, "0"));
+    }
 
     public static void setJobType(Context context, @JobType int type) {
         setJobTypeAsync(type).blockingAwait();

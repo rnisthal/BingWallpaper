@@ -87,14 +87,21 @@ public class SetWallpaperDelegate {
                     Settings.setLastWallpaperBaseUrlAsync(candidateBase).blockingAwait();
                 } catch (Throwable throwable) {
                     failure(config, throwable);
-                    return AutomaticUpdateResult.FAILURE;
+                    return AutomaticUpdateResult.RETRYABLE_FAILURE;
                 }
                 mServiceHelper.unchanged();
                 return AutomaticUpdateResult.UNCHANGED;
             }
             if (!TextUtils.isEmpty(storedBase) && storedBase.equals(candidateBase)) {
-                mServiceHelper.unchanged(image);
-                return AutomaticUpdateResult.UNCHANGED;
+                try {
+                    mServiceHelper.unchanged(image);
+                    return AutomaticUpdateResult.UNCHANGED;
+                } catch (Throwable throwable) {
+                    failure(config, throwable);
+                    return throwable instanceof SetWallpaperServiceHelper.PersistenceException
+                            ? AutomaticUpdateResult.RETRYABLE_FAILURE
+                            : AutomaticUpdateResult.FAILURE;
+                }
             }
             completeDay = !TextUtils.isEmpty(storedBase);
         }

@@ -51,57 +51,55 @@ public class DBHelper extends SQLiteOpenHelper {
     public static void toChangeDataStore(Context context) {
         File tray = context.getDatabasePath(DBHelper.TrayDBHelper.DATABASE_NAME);
         if (tray != null && tray.exists()) {
-            new Thread(() -> {
-                SettingTrayPreferences trayPreferences = SettingTrayPreferences.get();
-                SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
-                trayPreferences.putBoolean(SettingsActivity.PREF_DOH,
-                        preferences.getBoolean(SettingsActivity.PREF_DOH, false));
-                trayPreferences.putBoolean(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE,
-                        preferences.getBoolean(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, false));
-                trayPreferences.putString(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE,
-                        preferences.getString(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE, "0"));
-                trayPreferences.putString(SettingsActivity.PREF_LANGUAGE,
-                        preferences.getString(SettingsActivity.PREF_LANGUAGE, "0"));
+            SettingTrayPreferences trayPreferences = SettingTrayPreferences.get();
+            SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(context);
+            trayPreferences.putBooleanAsync(SettingsActivity.PREF_DOH,
+                    preferences.getBoolean(SettingsActivity.PREF_DOH, false)).blockingAwait();
+            trayPreferences.putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE,
+                    preferences.getBoolean(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, false)).blockingAwait();
+            trayPreferences.putStringAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE,
+                    preferences.getString(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_MODE, "0")).blockingAwait();
+            trayPreferences.putStringAsync(SettingsActivity.PREF_LANGUAGE,
+                    preferences.getString(SettingsActivity.PREF_LANGUAGE, "0")).blockingAwait();
 
-                try (TrayDBHelper dbHelper = new TrayDBHelper(context)) {
-                    try (Cursor query = dbHelper.getReadableDatabase()
-                            .query(TrayDBHelper.TABLE_NAME, null, null, null, null, null, null)) {
-                        while (query.moveToNext()) {
-                            String key = query.getString(query.getColumnIndexOrThrow(TrayDBHelper.KEY));
-                            String value = query.getString(query.getColumnIndexOrThrow(TrayDBHelper.VALUE));
-                            L.alog().w("toChangeDataStore", "key: " + key + "  value: " + value);
-                            try {
-                                switch (key) {
-                                    case SettingsActivity.PREF_STACK_BLUR:
-                                    case Settings.BING_WALLPAPER_JOB_TYPE:
-                                        trayPreferences.putInt(key, Integer.parseInt(value));
-                                        break;
-                                    case SettingsActivity.PREF_SET_WALLPAPER_LOG:
-                                    case SettingsActivity.PREF_CRASH_REPORT:
-                                    case SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_SUCCESS_NOTIFICATION:
-                                    case SettingsActivity.PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI:
-                                    case SettingsActivity.PREF_SET_MIUI_LOCK_SCREEN_WALLPAPER:
-                                    case SettingsActivity.PREF_AUTO_SAVE_WALLPAPER_FILE:
-                                        trayPreferences.putBoolean(key, Boolean.parseBoolean(value));
-                                        break;
-                                    case SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL:
-                                    case SettingsActivity.PREF_STACK_BLUR_MODE:
-                                    case SettingsActivity.PREF_COUNTRY:
-                                    case SettingsActivity.PREF_SET_WALLPAPER_RESOLUTION:
-                                    case SettingsActivity.PREF_SAVE_WALLPAPER_RESOLUTION:
-                                    case SettingsActivity.PREF_SET_WALLPAPER_AUTO_MODE:
-                                    case SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_TIME:
-                                    case Constants.PREF_LAST_WALLPAPER_IMAGE_URL:
-                                        trayPreferences.putString(key, value);
-                                        break;
-                                }
-                            } catch (Throwable ignored) {
+            try (TrayDBHelper dbHelper = new TrayDBHelper(context)) {
+                try (Cursor query = dbHelper.getReadableDatabase()
+                        .query(TrayDBHelper.TABLE_NAME, null, null, null, null, null, null)) {
+                    while (query.moveToNext()) {
+                        String key = query.getString(query.getColumnIndexOrThrow(TrayDBHelper.KEY));
+                        String value = query.getString(query.getColumnIndexOrThrow(TrayDBHelper.VALUE));
+                        L.alog().w("toChangeDataStore", "key: " + key + "  value: " + value);
+                        try {
+                            switch (key) {
+                                case SettingsActivity.PREF_STACK_BLUR:
+                                case Settings.BING_WALLPAPER_JOB_TYPE:
+                                    trayPreferences.putIntAsync(key, Integer.parseInt(value)).blockingAwait();
+                                    break;
+                                case SettingsActivity.PREF_SET_WALLPAPER_LOG:
+                                case SettingsActivity.PREF_CRASH_REPORT:
+                                case SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_SUCCESS_NOTIFICATION:
+                                case SettingsActivity.PREF_SET_WALLPAPER_DAY_AUTO_UPDATE_ONLY_WIFI:
+                                case SettingsActivity.PREF_SET_MIUI_LOCK_SCREEN_WALLPAPER:
+                                case SettingsActivity.PREF_AUTO_SAVE_WALLPAPER_FILE:
+                                    trayPreferences.putBooleanAsync(key, Boolean.parseBoolean(value)).blockingAwait();
+                                    break;
+                                case SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_INTERVAL:
+                                case SettingsActivity.PREF_STACK_BLUR_MODE:
+                                case SettingsActivity.PREF_COUNTRY:
+                                case SettingsActivity.PREF_SET_WALLPAPER_RESOLUTION:
+                                case SettingsActivity.PREF_SAVE_WALLPAPER_RESOLUTION:
+                                case SettingsActivity.PREF_SET_WALLPAPER_AUTO_MODE:
+                                case SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE_TIME:
+                                case Constants.PREF_LAST_WALLPAPER_IMAGE_URL:
+                                    trayPreferences.putStringAsync(key, value).blockingAwait();
+                                    break;
                             }
+                        } catch (Throwable ignored) {
                         }
                     }
                 }
-                context.deleteDatabase(TrayDBHelper.DATABASE_NAME);
-            }).start();
+            }
+            context.deleteDatabase(TrayDBHelper.DATABASE_NAME);
         }
     }
 

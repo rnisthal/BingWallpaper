@@ -43,13 +43,22 @@ public class MApplication extends Application implements Configuration.Provider 
         SettingTrayPreferences.init(getApplicationContext());
         LogDebugFileUtils.init(getApplicationContext());
         TasksUtils.init(getApplicationContext());
-        if (isMainProcess()) {
-            new Thread(() -> BingWallpaperJobManager.reconcile(getApplicationContext())).start();
-        }
+        boolean mainProcess = isMainProcess();
         new Thread(() -> {
+            boolean settingsReady = true;
+            if (mainProcess) {
+                try {
+                    DBHelper.toChangeDataStore(getApplicationContext());
+                } catch (Throwable throwable) {
+                    settingsReady = false;
+                    L.alog().w("MApplication", throwable, "settings migration failure");
+                }
+            }
             NetUtils.get().init(getApplicationContext());
+            if (mainProcess && settingsReady) {
+                BingWallpaperJobManager.reconcile(getApplicationContext());
+            }
             CacheUtils.init(getApplicationContext());
-            DBHelper.toChangeDataStore(getApplicationContext());
             CrashReportHandle.init(getApplicationContext());
         }).start();
         RxJavaPlugins.setErrorHandler(throwable -> L.alog().w("RxJavaPlugins", throwable));

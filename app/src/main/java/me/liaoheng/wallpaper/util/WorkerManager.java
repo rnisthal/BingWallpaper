@@ -175,8 +175,16 @@ public class WorkerManager {
     }
 
     public static boolean isScheduled(Context context) {
+        return isScheduled(context, PERIODIC_WORK_NAME);
+    }
+
+    public static boolean isTimerScheduled(Context context, LocalDate triggerDate) {
+        return isScheduled(context, timerWorkName(triggerDate));
+    }
+
+    private static boolean isScheduled(Context context, String workName) {
         ListenableFuture<List<WorkInfo>> statuses = WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWork(PERIODIC_WORK_NAME);
+                .getWorkInfosForUniqueWork(workName);
         try {
             boolean running = false;
             List<WorkInfo> workInfoList = statuses.get();
@@ -185,7 +193,10 @@ public class WorkerManager {
                 running = state == WorkInfo.State.RUNNING | state == WorkInfo.State.ENQUEUED;
             }
             return running;
-        } catch (ExecutionException | InterruptedException e) {
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException exception) {
             return false;
         }
     }

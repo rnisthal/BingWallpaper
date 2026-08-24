@@ -99,8 +99,12 @@ public class SetWallpaperServiceHelper {
     }
 
     public void unchanged(Wallpaper image) {
-        if (image != null && Settings.wasWallpaperApplied(image.getBaseUrl(), LocalDate.now().toString())) {
-            BingWallpaperUtils.taskComplete(mContext, TAG);
+        try {
+            if (image != null && Settings.wasWallpaperApplied(image.getBaseUrl(), LocalDate.now().toString())) {
+                BingWallpaperUtils.taskComplete(mContext, TAG);
+            }
+        } catch (Throwable throwable) {
+            throw new PersistenceException(throwable);
         }
         unchanged();
     }

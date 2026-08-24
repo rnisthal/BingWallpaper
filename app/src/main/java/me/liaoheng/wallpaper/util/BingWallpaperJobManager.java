@@ -4,9 +4,11 @@ import android.app.Activity;
 import android.app.WallpaperManager;
 import android.app.WallpaperInfo;
 import android.content.ComponentName;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Looper;
+import android.os.Handler;
 import android.widget.Toast;
 
 import com.github.liaoheng.common.util.L;
@@ -16,6 +18,7 @@ import org.joda.time.LocalTime;
 import org.joda.time.LocalDate;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,13 +33,16 @@ public class BingWallpaperJobManager {
     private static final String TAG = BingWallpaperJobManager.class.getSimpleName();
     public static final int PENDING_LIVE = -2;
 
-    public static void disabled(Context context) {
-        disabled(context, false);
+    public static boolean disabled(Context context) {
+        return disabled(context, false);
     }
 
-    public static void disabled(Context context, boolean force) {
+    public static boolean disabled(Context context, boolean force) {
         try {
             Settings.runAutomaticUpdateTransition(() -> {
+                if (!setLivePollingAndAwait(context, false)) {
+                    throw new IllegalStateException("disable Live polling timed out");
+                }
                 Throwable stateFailure = null;
                 try {
                     Settings.setJobTypeAsync(Settings.NONE).blockingAwait();
@@ -45,7 +51,6 @@ public class BingWallpaperJobManager {
                 }
                 boolean workDisabled = WorkerManager.disabledAndAwait(context);
                 BingWallpaperAlarmManager.disabled(context);
-                setLivePolling(context, false);
                 if (stateFailure != null) {
                     throw stateFailure;
                 }
@@ -53,8 +58,10 @@ public class BingWallpaperJobManager {
                     throw new IllegalStateException("disable automatic work failed");
                 }
             });
+            return true;
         } catch (Throwable throwable) {
             L.alog().w(TAG, throwable, "disable job state failure");
+            return false;
         }
     }
 
@@ -149,6 +156,9 @@ public class BingWallpaperJobManager {
     private static boolean enableSystemLocked(Context context) {
         long time = TimeUnit.HOURS.toSeconds(Settings.getAutomaticUpdateInterval(context));
         int previousJobType = Settings.getJobType(context);
+        if (previousJobType == Settings.LIVE_WALLPAPER && !setLivePollingAndAwait(context, false)) {
+            return false;
+        }
         try {
             Settings.setJobTypeAsync(Settings.WORKER).blockingAwait();
         } catch (Throwable throwable) {
@@ -188,6 +198,9 @@ public class BingWallpaperJobManager {
     private static boolean enableTimerLocked(Context context) {
         LocalTime updateTime = BingWallpaperUtils.getDayUpdateTime(context);
         int previousJobType = Settings.getJobType(context);
+        if (previousJobType == Settings.LIVE_WALLPAPER && !setLivePollingAndAwait(context, false)) {
+            return false;
+        }
         try {
             Settings.setJobTypeAsync(Settings.TIMER).blockingAwait();
         } catch (Throwable throwable) {
@@ -286,8 +299,7 @@ public class BingWallpaperJobManager {
                     callback.onAllow();
                 }
             } else {
-                if (Settings.getAutomaticUpdateType(context) == Settings.AUTOMATIC_UPDATE_TYPE_AUTO
-                        && (enableSystem(context) || enableTimer(context))) {
+                if (enableAutomaticFallback(context)) {
                     if (callback != null) {
                         callback.onAllow();
                     }
@@ -355,33 +367,90 @@ public class BingWallpaperJobManager {
             return enableTimer(context);
         }
         if (jobType == Settings.LIVE_WALLPAPER && isLiveWallpaperActive(context)) {
-            try {
-                Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
-            } catch (Throwable throwable) {
-                L.alog().w(TAG, throwable, "restore live state failure");
-                return false;
-            }
-            WorkerManager.disabled(context);
-            BingWallpaperAlarmManager.disabled(context);
-            setLivePolling(context, true);
-            return true;
+            return enableLiveService(context) == Settings.LIVE_WALLPAPER;
         }
-        disabled(context);
-        return jobType == Settings.NONE;
+        return jobType == Settings.NONE && disabled(context);
     }
 
     public static void reconcile(Context context) {
+        try {
+            Settings.runAutomaticUpdateTransition(() -> reconcileLocked(context));
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "automatic scheduler reconciliation failure");
+        }
+    }
+
+    private static void reconcileLocked(Context context) {
         if (!Settings.isAutomaticUpdateEnabled(context)) {
             disabled(context);
             return;
         }
         int jobType = Settings.getJobType(context);
-        boolean restored = jobType == Settings.WORKER && enableSystem(context)
-                || jobType == Settings.TIMER && enableTimer(context)
-                || jobType == Settings.LIVE_WALLPAPER && restore(context, jobType);
+        boolean restored;
+        if (jobType == Settings.WORKER) {
+            restored = WorkerManager.isScheduled(context) || enableSystem(context);
+        } else if (jobType == Settings.TIMER) {
+            restored = reconcileTimer(context);
+        } else if (jobType == Settings.LIVE_WALLPAPER) {
+            restored = restore(context, jobType);
+        } else {
+            restored = reconcileMissingEngine(context);
+        }
         if (!restored) {
             L.alog().w(TAG, "automatic scheduler reconciliation failed for job type : %s", jobType);
+            try {
+                Settings.setAutomaticUpdateEnabled(false).blockingAwait();
+            } catch (Throwable throwable) {
+                L.alog().w(TAG, throwable, "persist reconciliation failure state");
+            }
+            disabled(context);
         }
+    }
+
+    public static boolean enableAutomaticFallback(Context context) {
+        return Settings.getAutomaticUpdateType(context) == Settings.AUTOMATIC_UPDATE_TYPE_AUTO
+                && (enableSystem(context) || enableTimer(context));
+    }
+
+    private static boolean reconcileTimer(Context context) {
+        try {
+            boolean alarmScheduled = BingWallpaperAlarmManager.isScheduled(context)
+                    || BingWallpaperAlarmManager.scheduleNext(context);
+            LocalDate today = LocalDate.now();
+            LocalTime updateTime = BingWallpaperUtils.getDayUpdateTime(context);
+            if (BingWallpaperUtils.isAtOrAfterEarliestTime(LocalTime.now(), updateTime)
+                    && BingWallpaperUtils.isTaskUndone(context)
+                    && !WorkerManager.isTimerScheduled(context, today)) {
+                WorkerManager.enqueueTimer(context, today, false).getResult().get();
+            }
+            WorkerManager.cancelPeriodic(context);
+            boolean liveStopped = setLivePollingAndAwait(context, false);
+            return liveStopped && (alarmScheduled || BingWallpaperAlarmManager.scheduleRetry(context));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "reconcile timer failure");
+        }
+        return BingWallpaperAlarmManager.scheduleRetry(context);
+    }
+
+    private static boolean reconcileMissingEngine(Context context) {
+        int type = Settings.getAutomaticUpdateType(context);
+        if (type == Settings.AUTOMATIC_UPDATE_TYPE_SYSTEM) {
+            return enableSystem(context);
+        }
+        if (type == Settings.AUTOMATIC_UPDATE_TYPE_TIMER) {
+            return enableTimer(context);
+        }
+        if (type == Settings.AUTOMATIC_UPDATE_TYPE_SERVICE) {
+            return isLiveWallpaperActive(context)
+                    && enableLiveService(context) == Settings.LIVE_WALLPAPER;
+        }
+        if (isLiveWallpaperActive(context)
+                && enableLiveService(context) == Settings.LIVE_WALLPAPER) {
+            return true;
+        }
+        return enableSystem(context) || enableTimer(context);
     }
 
     public static void setLivePolling(Context context, boolean enabled) {
@@ -389,6 +458,28 @@ public class BingWallpaperJobManager {
         intent.putExtra(LiveWallpaperService.EXTRA_ENABLE_LIVE_WALLPAPER, enabled);
         intent.setPackage(context.getPackageName());
         context.sendBroadcast(intent, LiveWallpaperService.PERMISSION_UPDATE_LIVE_WALLPAPER);
+    }
+
+    private static boolean setLivePollingAndAwait(Context context, boolean enabled) {
+        Intent intent = new Intent(LiveWallpaperService.ENABLE_LIVE_WALLPAPER);
+        intent.putExtra(LiveWallpaperService.EXTRA_ENABLE_LIVE_WALLPAPER, enabled);
+        intent.setPackage(context.getPackageName());
+        CountDownLatch completed = new CountDownLatch(1);
+        BroadcastReceiver resultReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context ignored, Intent resultIntent) {
+                completed.countDown();
+            }
+        };
+        context.sendOrderedBroadcast(intent, LiveWallpaperService.PERMISSION_UPDATE_LIVE_WALLPAPER,
+                resultReceiver, new Handler(Looper.getMainLooper()), Activity.RESULT_CANCELED,
+                null, null);
+        try {
+            return completed.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private static void restoreJobType(@Settings.JobType int jobType) {

@@ -32,6 +32,7 @@ public class BingWallpaperAlarmManager {
     public static void disabled(Context context) {
         PendingIntent pendingIntent = getPendingIntent(context);
         AlarmManager alarmManager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        Settings.setTimerAlarmTriggerAt(0).blockingAwait();
         if (alarmManager == null) {
             return;
         }
@@ -52,6 +53,14 @@ public class BingWallpaperAlarmManager {
         return enabled(context, BingWallpaperUtils.getDayUpdateTime(context));
     }
 
+    public static boolean isScheduled(Context context) {
+        Intent intent = new Intent(context, AutoSetWallpaperBroadcastReceiver.class);
+        intent.setAction(AutoSetWallpaperBroadcastReceiver.ACTION);
+        int flags = PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE;
+        return Settings.getTimerAlarmTriggerAt() > System.currentTimeMillis()
+                && PendingIntent.getBroadcast(context, REQUEST_CODE, intent, flags) != null;
+    }
+
     public static boolean scheduleRetry(Context context) {
         try {
             return add(context, DateTime.now().plusMinutes(RETRY_MINUTES));
@@ -69,6 +78,7 @@ public class BingWallpaperAlarmManager {
             return false;
         }
         alarmManager.set(AlarmManager.RTC_WAKEUP, time.getMillis(), pendingIntent);
+        Settings.setTimerAlarmTriggerAt(time.getMillis()).blockingAwait();
         return true;
     }
 

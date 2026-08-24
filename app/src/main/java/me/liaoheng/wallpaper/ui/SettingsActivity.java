@@ -101,12 +101,14 @@ public class SettingsActivity extends BaseActivity {
 
             @Override
             public void onAllow() {
+                Settings.setLiveChooserResult(1).blockingAwait();
                 intent.putExtra("enable", true);
                 LocalBroadcastManager.getInstance(appContext).sendBroadcast(intent);
             }
 
             @Override
             public void onDeny() {
+                Settings.setLiveChooserResult(2).blockingAwait();
                 intent.putExtra("enable", false);
                 LocalBroadcastManager.getInstance(appContext).sendBroadcast(intent);
             }
@@ -509,7 +511,7 @@ public class SettingsActivity extends BaseActivity {
                     result = BingWallpaperJobManager.enabledJob(context);
                     success = result != Settings.NONE;
                 } else {
-                    BingWallpaperJobManager.disabled(context);
+                    success = BingWallpaperJobManager.disabled(context);
                 }
             } else if (PREF_SET_WALLPAPER_DAILY_UPDATE_MODE.equals(key)
                     && Settings.isAutomaticUpdateEnabled(context)) {
@@ -517,6 +519,9 @@ public class SettingsActivity extends BaseActivity {
                 success = result != Settings.NONE;
             } else if (Settings.isAutomaticUpdateEnabled(context)) {
                 success = BingWallpaperJobManager.reconfigure(context);
+            }
+            if (result == BingWallpaperJobManager.PENDING_LIVE) {
+                Settings.setLiveChooserResult(0).blockingAwait();
             }
             return new AutomaticChangeResult(success, result);
         }
@@ -534,7 +539,7 @@ public class SettingsActivity extends BaseActivity {
                 try {
                     BingWallpaperJobManager.startLiveService(requireActivity());
                 } catch (Throwable throwable) {
-                    rollbackAutomaticChange();
+                    applyLiveFallback();
                 }
                 return;
             }
@@ -552,11 +557,61 @@ public class SettingsActivity extends BaseActivity {
                 return;
             }
             mWaitingForLiveResult = false;
-            if (success) {
-                finishAutomaticChange(true);
-            } else {
-                rollbackAutomaticChange();
-            }
+            mAutomaticDisposables.add(Settings.setLiveChooserResult(0)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(() -> {
+                        if (!isAdded()) {
+                            if (!success) {
+                                rollbackAutomaticChangeDetached();
+                            }
+                        } else if (success) {
+                            finishAutomaticChange(true);
+                        } else {
+                            rollbackAutomaticChange();
+                        }
+                    }, throwable -> {
+                        if (isAdded()) {
+                            rollbackAutomaticChange();
+                        } else {
+                            rollbackAutomaticChangeDetached();
+                        }
+                    }));
+        }
+
+        private void readPendingLiveResult() {
+            mAutomaticDisposables.add(Single.fromCallable(Settings::getLiveChooserResult)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(result -> {
+                        if (result != 0 && isAdded()) {
+                            completePendingLiveChange(result == 1);
+                        }
+                    }, throwable -> { }));
+        }
+
+        private void applyLiveFallback() {
+            mAutomaticDisposables.add(Single.fromCallable(
+                            () -> BingWallpaperJobManager.enableAutomaticFallback(mAutomaticContext))
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(success -> {
+                        if (!isAdded()) {
+                            if (!success) {
+                                rollbackAutomaticChangeDetached();
+                            }
+                        } else if (success) {
+                            finishAutomaticChange(true);
+                        } else {
+                            rollbackAutomaticChange();
+                        }
+                    }, throwable -> {
+                        if (isAdded()) {
+                            rollbackAutomaticChange();
+                        } else {
+                            rollbackAutomaticChangeDetached();
+                        }
+                    }));
         }
 
         private void rollbackAutomaticChange() {
@@ -570,8 +625,7 @@ public class SettingsActivity extends BaseActivity {
                         if (Settings.isAutomaticUpdateEnabled(mAutomaticContext)) {
                             restored = BingWallpaperJobManager.restore(mAutomaticContext, previousJobType);
                         } else {
-                            BingWallpaperJobManager.disabled(mAutomaticContext);
-                            restored = true;
+                            restored = BingWallpaperJobManager.disabled(mAutomaticContext);
                         }
                         if (!restored) {
                             throw new IllegalStateException("automatic scheduler restore failed");
@@ -606,7 +660,9 @@ public class SettingsActivity extends BaseActivity {
                                 throw new IllegalStateException("automatic scheduler restore failed");
                             }
                         } else {
-                            BingWallpaperJobManager.disabled(mAutomaticContext);
+                            if (!BingWallpaperJobManager.disabled(mAutomaticContext)) {
+                                throw new IllegalStateException("disable automatic scheduler failed");
+                            }
                         }
                     }))
                     .subscribeOn(Schedulers.io())
@@ -616,7 +672,7 @@ public class SettingsActivity extends BaseActivity {
         private void failClosedAutomaticChange() {
             mAutomaticPhase = PHASE_DISABLE;
             Context context = mAutomaticContext;
-            mAutomaticDisposables.add(Completable.fromAction(() -> BingWallpaperJobManager.disabled(context))
+            mAutomaticDisposables.add(Completable.fromAction(() -> disableAutomaticOrThrow(context))
                     .andThen(Settings.setAutomaticUpdateEnabled(false))
                     .retry(2)
                     .subscribeOn(Schedulers.io())
@@ -634,11 +690,17 @@ public class SettingsActivity extends BaseActivity {
 
         private void failClosedAutomaticChangeDetached() {
             mAutomaticDisposables.add(Completable.fromAction(
-                            () -> BingWallpaperJobManager.disabled(mAutomaticContext))
+                            () -> disableAutomaticOrThrow(mAutomaticContext))
                     .andThen(Settings.setAutomaticUpdateEnabled(false))
                     .retry(2)
                     .subscribeOn(Schedulers.io())
                     .subscribe(() -> { }, throwable -> { }));
+        }
+
+        private void disableAutomaticOrThrow(Context context) {
+            if (!BingWallpaperJobManager.disabled(context)) {
+                throw new IllegalStateException("disable automatic scheduler failed");
+            }
         }
 
         private void readFailedClosedState() {
@@ -652,7 +714,7 @@ public class SettingsActivity extends BaseActivity {
                         }
                     }, throwable -> {
                         if (isAdded()) {
-                            finishFailedClosedChange(true);
+                            finishFailedClosedChange(false);
                         }
                     }));
         }
@@ -736,6 +798,8 @@ public class SettingsActivity extends BaseActivity {
                 rollbackAutomaticChange();
             } else if (mAutomaticPhase == PHASE_DISABLE) {
                 failClosedAutomaticChange();
+            } else if (mAutomaticPhase == PHASE_LIVE) {
+                readPendingLiveResult();
             }
         }
 

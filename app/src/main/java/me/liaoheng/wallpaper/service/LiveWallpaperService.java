@@ -1,6 +1,7 @@
 package me.liaoheng.wallpaper.service;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.app.WallpaperColors;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -84,6 +85,8 @@ public class LiveWallpaperService extends WallpaperService {
     private CompositeDisposable mLoadWallpaperDisposable;
     private final long mCheckPeriodic = Constants.DEF_LIVE_WALLPAPER_CHECK_PERIODIC;
     private boolean mLiveDispatchAccepted;
+    private final Object mAutomaticDispatchLock = new Object();
+    private boolean mAutomaticPollingEnabled;
 
     @Override
     public Engine onCreateEngine() {
@@ -102,9 +105,15 @@ public class LiveWallpaperService extends WallpaperService {
                 LogDebugFileUtils.init(getApplicationContext());
             } else if (ENABLE_LIVE_WALLPAPER.equals(intent.getAction())) {
                 boolean enable = intent.getBooleanExtra(EXTRA_ENABLE_LIVE_WALLPAPER, false);
-                disable();
-                if (enable) {
-                    enable();
+                synchronized (mAutomaticDispatchLock) {
+                    disable();
+                    mAutomaticPollingEnabled = enable;
+                    if (enable) {
+                        enable();
+                    }
+                }
+                if (isOrderedBroadcast()) {
+                    setResultCode(Activity.RESULT_OK);
                 }
             }
         }
@@ -182,12 +191,12 @@ public class LiveWallpaperService extends WallpaperService {
         if (!mAutomaticUpdateRunning.compareAndSet(false, true)) {
             return;
         }
-        Config config = BingWallpaperUtils.checkRunningToConfig(this, TAG);
-        if (config == null) {
-            mAutomaticUpdateRunning.set(false);
-            return;
-        }
+        Config config = null;
         try {
+            config = BingWallpaperUtils.checkRunningToConfig(this, TAG);
+            if (config == null) {
+                return;
+            }
             mServiceHelper.begin(config, true);
             Wallpaper image = BingWallpaperNetworkClient.getWallpaper(this, false);
             String storedBase = Settings.getLastWallpaperBaseUrl(this);
@@ -209,17 +218,27 @@ public class LiveWallpaperService extends WallpaperService {
                 throw new IOException("Download wallpaper failure");
             }
             DownloadBitmap download = new DownloadBitmap(image, config);
-            boolean dispatched = Settings.runIfAutomaticUpdateCurrent(this::isAutomaticLiveCurrent, () -> {
-                if (!setWallpaper(config, download)) {
-                    throw new IOException("Live wallpaper dispatch failure");
+            boolean dispatched;
+            synchronized (mAutomaticDispatchLock) {
+                if (!mAutomaticPollingEnabled || !isAutomaticLiveCurrent()) {
+                    dispatched = false;
+                } else {
+                    if (!setWallpaper(config, download)) {
+                        throw new IOException("Live wallpaper dispatch failure");
+                    }
+                    mServiceHelper.success(config, image, !TextUtils.isEmpty(storedBase));
+                    dispatched = true;
                 }
-                mServiceHelper.success(config, image, !TextUtils.isEmpty(storedBase));
-            });
+            }
             if (!dispatched) {
                 mServiceHelper.unchanged();
             }
         } catch (Throwable throwable) {
-            mServiceHelper.failure(config, throwable);
+            if (config != null) {
+                mServiceHelper.failure(config, throwable);
+            } else {
+                L.alog().w(TAG, throwable, "automatic config check failure");
+            }
         } finally {
             mAutomaticUpdateRunning.set(false);
         }
