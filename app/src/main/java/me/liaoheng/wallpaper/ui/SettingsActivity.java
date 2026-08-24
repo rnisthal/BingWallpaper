@@ -593,13 +593,20 @@ public class SettingsActivity extends BaseActivity {
 
         private void readPendingLiveResult() {
             mAutomaticDisposables.add(Single.fromCallable(Settings::getLiveChooserResult)
+                    .retry(2)
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(result -> {
                         if (result != 0 && isAdded()) {
                             completePendingLiveChange(result == 1);
                         }
-                    }, throwable -> { }));
+                    }, throwable -> {
+                        if (isAdded()) {
+                            failClosedAutomaticChange();
+                        } else {
+                            failClosedAutomaticChangeDetached();
+                        }
+                    }));
         }
 
         private void applyLiveFallback() {

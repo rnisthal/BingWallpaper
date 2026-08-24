@@ -68,6 +68,10 @@ public class BingWallpaperAlarmManager {
                 && PendingIntent.getBroadcast(context, REQUEST_CODE, intent, flags) != null;
     }
 
+    public static void markDelivered() {
+        Settings.setTimerAlarmTriggerAt(0).blockingAwait();
+    }
+
     public static boolean scheduleRetry(Context context) {
         try {
             return add(context, DateTime.now().plusMinutes(RETRY_MINUTES));

@@ -73,6 +73,7 @@ public class AutoSetWallpaperBroadcastReceiver extends BroadcastReceiver {
                 Settings.runIfAutomaticUpdateCurrent(
                         () -> Settings.isAutomaticUpdateEnabled(context)
                                 && Settings.getJobType(context) == Settings.TIMER, () -> {
+                    BingWallpaperAlarmManager.markDelivered();
                     L.alog().d(TAG, "timer : %s", action);
                     if (Settings.isEnableLog(context)) {
                         LogDebugFileUtils.get().i(TAG, "timer : %s", action);

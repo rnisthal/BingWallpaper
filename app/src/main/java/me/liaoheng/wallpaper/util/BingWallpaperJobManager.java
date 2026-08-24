@@ -428,13 +428,13 @@ public class BingWallpaperJobManager {
         }
         int jobType = Settings.getJobType(context);
         boolean restored;
-        if (jobType == Settings.WORKER) {
+        if (!Settings.isSchedulerFingerprintCurrent(context, jobType)) {
+            restored = reconcileSelectedEngine(context, jobType);
+        } else if (jobType == Settings.WORKER) {
             boolean legacyCanceled = WorkerManager.cancelLegacyPeriodicAndAwait(context);
-            restored = legacyCanceled && (Settings.isSchedulerFingerprintCurrent(context, jobType)
-                    && WorkerManager.isScheduled(context) || enableSystem(context));
+            restored = legacyCanceled && (WorkerManager.isScheduled(context) || enableSystem(context));
         } else if (jobType == Settings.TIMER) {
-            restored = Settings.isSchedulerFingerprintCurrent(context, jobType)
-                    ? reconcileTimer(context) : enableTimer(context);
+            restored = reconcileTimer(context);
         } else if (jobType == Settings.LIVE_WALLPAPER) {
             restored = restore(context, jobType);
         } else {
@@ -442,11 +442,7 @@ public class BingWallpaperJobManager {
         }
         if (!restored) {
             L.alog().w(TAG, "automatic scheduler reconciliation failed for job type : %s", jobType);
-            try {
-                Settings.setAutomaticUpdateEnabled(false).blockingAwait();
-            } catch (Throwable throwable) {
-                L.alog().w(TAG, throwable, "persist reconciliation failure state");
-            }
+            Settings.setAutomaticUpdateEnabled(false).blockingAwait();
             if (!disabled(context)) {
                 throw new IllegalStateException("fail-closed scheduler cleanup failed");
             }
@@ -471,14 +467,34 @@ public class BingWallpaperJobManager {
             }
             WorkerManager.cancelPeriodic(context);
             boolean liveStopped = setLivePollingAndAwait(context, false);
-            return liveStopped && (alarmScheduled || BingWallpaperAlarmManager.scheduleRetry(context));
+            if (liveStopped && alarmScheduled) {
+                return true;
+            }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         } catch (Throwable throwable) {
             L.alog().w(TAG, throwable, "reconcile timer failure");
         }
-        BingWallpaperAlarmManager.scheduleRetry(context);
-        return false;
+        return BingWallpaperAlarmManager.scheduleRetry(context);
+    }
+
+    private static boolean reconcileSelectedEngine(Context context, @Settings.JobType int jobType) {
+        int type = Settings.getAutomaticUpdateType(context);
+        if (type == Settings.AUTOMATIC_UPDATE_TYPE_SYSTEM) {
+            return enableSystem(context);
+        }
+        if (type == Settings.AUTOMATIC_UPDATE_TYPE_TIMER) {
+            return enableTimer(context);
+        }
+        if (type == Settings.AUTOMATIC_UPDATE_TYPE_SERVICE) {
+            return isLiveWallpaperActive(context)
+                    && enableLiveService(context) == Settings.LIVE_WALLPAPER;
+        }
+        if ((jobType == Settings.WORKER || jobType == Settings.TIMER
+                || jobType == Settings.LIVE_WALLPAPER) && restore(context, jobType)) {
+            return true;
+        }
+        return reconcileMissingEngine(context);
     }
 
     private static boolean reconcileMissingEngine(Context context) {

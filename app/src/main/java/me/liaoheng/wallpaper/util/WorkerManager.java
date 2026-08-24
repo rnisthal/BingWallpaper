@@ -118,7 +118,9 @@ public class WorkerManager {
             }
 
             WorkManager manager = WorkManager.getInstance(context);
-            manager.cancelUniqueWork(LEGACY_PERIODIC_WORK_NAME);
+            if (!cancelLegacyPeriodicAndAwait(context)) {
+                return false;
+            }
             manager.enqueueUniquePeriodicWork(PERIODIC_WORK_NAME,
                             ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, builder.build())
                     .getResult().get();

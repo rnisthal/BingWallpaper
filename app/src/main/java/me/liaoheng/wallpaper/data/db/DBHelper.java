@@ -11,6 +11,9 @@ import androidx.preference.PreferenceManager;
 import com.github.liaoheng.common.util.L;
 
 import java.io.File;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 
 import me.liaoheng.wallpaper.BuildConfig;
 import me.liaoheng.wallpaper.data.provider.TasksContract;
@@ -49,6 +52,17 @@ public class DBHelper extends SQLiteOpenHelper {
      * Migrate config to DataStore
      */
     public static void toChangeDataStore(Context context) {
+        File lockFile = new File(context.getFilesDir(), "settings-migration.lock");
+        try (RandomAccessFile file = new RandomAccessFile(lockFile, "rw");
+                FileChannel channel = file.getChannel();
+                FileLock ignored = channel.lock()) {
+            migrateToDataStore(context);
+        } catch (Throwable throwable) {
+            throw new IllegalStateException("settings migration failure", throwable);
+        }
+    }
+
+    private static void migrateToDataStore(Context context) {
         File tray = context.getDatabasePath(DBHelper.TrayDBHelper.DATABASE_NAME);
         if (tray != null && tray.exists()) {
             SettingTrayPreferences trayPreferences = SettingTrayPreferences.get();

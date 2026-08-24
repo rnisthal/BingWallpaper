@@ -52,6 +52,7 @@ import io.reactivex.rxjava3.functions.Function;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.data.BingWallpaperNetworkClient;
+import me.liaoheng.wallpaper.data.db.DBHelper;
 import me.liaoheng.wallpaper.model.Config;
 import me.liaoheng.wallpaper.model.Wallpaper;
 import me.liaoheng.wallpaper.model.WallpaperImage;
@@ -144,13 +145,20 @@ public class LiveWallpaperService extends WallpaperService {
         ContextCompat.registerReceiver(this, mReceiver, intentFilter, PERMISSION_UPDATE_LIVE_WALLPAPER,
                 new Handler(getMainLooper()), ContextCompat.RECEIVER_NOT_EXPORTED);
         LocalBroadcastManager.getInstance(this).registerReceiver(mReceiver, intentFilter);
-        if (Settings.isAutomaticUpdateEnabled(this)
-                && Settings.getJobType(this) == Settings.LIVE_WALLPAPER) {
-            synchronized (mAutomaticDispatchLock) {
-                mAutomaticPollingEnabled = true;
-                enable(false);
+        mPoolExecutor.execute(() -> {
+            try {
+                DBHelper.toChangeDataStore(getApplicationContext());
+                if (Settings.isAutomaticUpdateEnabled(this)
+                        && Settings.getJobType(this) == Settings.LIVE_WALLPAPER) {
+                    synchronized (mAutomaticDispatchLock) {
+                        mAutomaticPollingEnabled = true;
+                        enable(false);
+                    }
+                }
+            } catch (Throwable throwable) {
+                L.alog().w(TAG, throwable, "Live settings bootstrap failure");
             }
-        }
+        });
     }
 
     @Override
