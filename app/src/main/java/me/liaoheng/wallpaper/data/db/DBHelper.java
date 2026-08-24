@@ -108,12 +108,16 @@ public class DBHelper extends SQLiteOpenHelper {
                                     trayPreferences.putStringAsync(key, value).blockingAwait();
                                     break;
                             }
-                        } catch (Throwable ignored) {
+                        } catch (NumberFormatException exception) {
+                            L.alog().w("toChangeDataStore", exception,
+                                    "skip malformed legacy value for key: %s", key);
                         }
                     }
                 }
             }
-            context.deleteDatabase(TrayDBHelper.DATABASE_NAME);
+            if (!context.deleteDatabase(TrayDBHelper.DATABASE_NAME)) {
+                throw new IllegalStateException("delete migrated settings database failure");
+            }
         }
     }
 

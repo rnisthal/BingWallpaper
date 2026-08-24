@@ -1,5 +1,7 @@
 package me.liaoheng.wallpaper.util;
 
+import androidx.work.WorkInfo;
+
 import org.joda.time.DateTime;
 import org.joda.time.LocalTime;
 import org.joda.time.LocalDate;
@@ -55,6 +57,23 @@ public class BingWallpaperUtilsTest extends BaseTest {
         assertFalse(BingWallpaperUtils.legacyUrlMatchesBase(
                 "https://www.bing.com/th?id=OHR.Other_EN-US_1920x1080.jpg",
                 "/th?id=OHR.Example_EN-US"));
+    }
+
+    @Test
+    public void dayCompletesOnlyAfterAStoredIdentityChanges() {
+        assertFalse(BingWallpaperUtils.shouldCompleteDay("", "/th?id=OHR.Today"));
+        assertFalse(BingWallpaperUtils.shouldCompleteDay(
+                "/th?id=OHR.Today", "/th?id=OHR.Today"));
+        assertFalse(BingWallpaperUtils.shouldCompleteDay("/th?id=OHR.Yesterday", ""));
+        assertTrue(BingWallpaperUtils.shouldCompleteDay(
+                "/th?id=OHR.Yesterday", "/th?id=OHR.Today"));
+    }
+
+    @Test
+    public void activeWorkStatesAreRunningOrEnqueuedOnly() {
+        assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.ENQUEUED));
+        assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.RUNNING));
+        assertFalse(WorkerManager.isActiveWorkState(WorkInfo.State.CANCELLED));
     }
 
     @Test

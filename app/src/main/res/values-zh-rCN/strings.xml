@@ -39,7 +39,6 @@
     <!--pref_set_wallpaper_daily_update_interval_summary-->
     <string name="pref_auto_update_check_time">每 %1$d 小时检查一次</string>
     <string name="pref_set_wallpaper_daily_update_time">定时任务触发时间</string>
-    <string name="pref_set_wallpaper_earliest_update_time">定时任务触发时间</string>
     <string name="pref_set_wallpaper_daily_update_success_notification">成功通知</string>
     <string name="pref_set_wallpaper_daily_update_success_notification_summary">在后台设置壁纸成功后通知</string>
     <string name="pref_set_wallpaper_day_fully_automatic_update_type_auto">最佳</string>

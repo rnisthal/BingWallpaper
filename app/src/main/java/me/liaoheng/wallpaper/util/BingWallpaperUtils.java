@@ -339,6 +339,11 @@ public class BingWallpaperUtils {
                 && legacyUrl.contains(baseUrl + "_");
     }
 
+    public static boolean shouldCompleteDay(String storedBaseUrl, String candidateBaseUrl) {
+        return !TextUtils.isEmpty(storedBaseUrl) && !TextUtils.isEmpty(candidateBaseUrl)
+                && !storedBaseUrl.equals(candidateBaseUrl);
+    }
+
     public static void showSaveWallpaperDialog(Context context, YNCallback callback) {
         UIUtils.showYNAlertDialog(context, context.getString(R.string.menu_save_wallpaper) + "?",
                 callback);

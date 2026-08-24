@@ -103,7 +103,7 @@ public class SetWallpaperDelegate {
                             : AutomaticUpdateResult.FAILURE;
                 }
             }
-            completeDay = !TextUtils.isEmpty(storedBase);
+            completeDay = BingWallpaperUtils.shouldCompleteDay(storedBase, candidateBase);
         }
 
         if (TextUtils.isEmpty(image.getImageUrl())) {

@@ -246,7 +246,8 @@ public class LiveWallpaperService extends WallpaperService {
                     if (!setWallpaper(config, download)) {
                         throw new IOException("Live wallpaper dispatch failure");
                     }
-                    mServiceHelper.success(config, image, !TextUtils.isEmpty(storedBase));
+                    mServiceHelper.success(config, image,
+                            BingWallpaperUtils.shouldCompleteDay(storedBase, image.getBaseUrl()));
                     dispatched = true;
                 }
             }

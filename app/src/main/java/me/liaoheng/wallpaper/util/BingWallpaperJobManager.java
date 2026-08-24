@@ -34,10 +34,6 @@ public class BingWallpaperJobManager {
     public static final int PENDING_LIVE = -2;
 
     public static boolean disabled(Context context) {
-        return disabled(context, false);
-    }
-
-    public static boolean disabled(Context context, boolean force) {
         for (int attempt = 0; attempt < 3; attempt++) {
             if (disableOnce(context)) {
                 return true;

@@ -211,18 +211,22 @@ public class WorkerManager {
         ListenableFuture<List<WorkInfo>> statuses = WorkManager.getInstance(context)
                 .getWorkInfosForUniqueWork(workName);
         try {
-            boolean running = false;
             List<WorkInfo> workInfoList = statuses.get();
             for (WorkInfo workInfo : workInfoList) {
-                WorkInfo.State state = workInfo.getState();
-                running = state == WorkInfo.State.RUNNING | state == WorkInfo.State.ENQUEUED;
+                if (isActiveWorkState(workInfo.getState())) {
+                    return true;
+                }
             }
-            return running;
+            return false;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return false;
         } catch (ExecutionException exception) {
             return false;
         }
+    }
+
+    static boolean isActiveWorkState(WorkInfo.State state) {
+        return state == WorkInfo.State.RUNNING || state == WorkInfo.State.ENQUEUED;
     }
 }

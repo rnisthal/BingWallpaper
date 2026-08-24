@@ -210,10 +210,6 @@ public class Settings {
     private static final String LAST_WALLPAPER_BASE_URL = "last_wallpaper_base_url";
     private static final String LAST_WALLPAPER_APPLIED_DATE = "last_wallpaper_applied_date";
 
-    public static void setLastWallpaperBaseUrl(Context context, String baseUrl) {
-        SettingTrayPreferences.get(context).put(LAST_WALLPAPER_BASE_URL, baseUrl);
-    }
-
     public static Completable setLastWallpaperBaseUrlAsync(String baseUrl) {
         return SettingTrayPreferences.get().putStringAsync(LAST_WALLPAPER_BASE_URL, baseUrl);
     }

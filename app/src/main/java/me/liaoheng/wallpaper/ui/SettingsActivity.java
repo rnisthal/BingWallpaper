@@ -172,7 +172,6 @@ public class SettingsActivity extends BaseActivity {
         private Object mPendingNewValue;
         private int mPendingPreviousJobType = Settings.NONE;
         private final CompositeDisposable mAutomaticDisposables = new CompositeDisposable();
-        private boolean mWaitingForLiveResult;
         private static final String STATE_PENDING_KEY = "automatic_pending_key";
         private static final String STATE_PENDING_OLD = "automatic_pending_old";
         private static final String STATE_PENDING_NEW = "automatic_pending_new";
@@ -480,7 +479,6 @@ public class SettingsActivity extends BaseActivity {
             mPendingOldValue = getPreferenceValue(preference);
             mPendingNewValue = newValue;
             mPendingPreviousJobType = Settings.getJobType(requireContext());
-            mWaitingForLiveResult = false;
             mAutomaticPhase = PHASE_APPLY;
             mAutomaticContext = requireContext().getApplicationContext();
             updateAutomaticControls();
@@ -546,7 +544,6 @@ public class SettingsActivity extends BaseActivity {
                 return;
             }
             if (change.jobType == BingWallpaperJobManager.PENDING_LIVE) {
-                mWaitingForLiveResult = true;
                 mAutomaticPhase = PHASE_LIVE;
                 try {
                     BingWallpaperJobManager.startLiveService(requireActivity());
@@ -568,7 +565,6 @@ public class SettingsActivity extends BaseActivity {
                 updateAutomaticControls();
                 return;
             }
-            mWaitingForLiveResult = false;
             mAutomaticDisposables.add(Settings.setLiveChooserResult(0)
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
@@ -754,7 +750,6 @@ public class SettingsActivity extends BaseActivity {
             mPendingOldValue = null;
             mPendingNewValue = null;
             mPendingPreviousJobType = Settings.NONE;
-            mWaitingForLiveResult = false;
             mAutomaticPhase = PHASE_APPLY;
             mAutomaticContext = null;
             mDailyUpdatePreference.setSummary(Settings.getJobTypeString(requireContext()));
@@ -810,7 +805,6 @@ public class SettingsActivity extends BaseActivity {
             mAutomaticPhase = state.getInt(STATE_PENDING_PHASE, PHASE_APPLY);
             mAutomaticContext = requireContext().getApplicationContext();
             mAutomaticTransition = true;
-            mWaitingForLiveResult = mAutomaticPhase == PHASE_LIVE;
             updateAutomaticControls();
             if (mAutomaticPhase == PHASE_APPLY) {
                 persistPendingAutomaticValue();
