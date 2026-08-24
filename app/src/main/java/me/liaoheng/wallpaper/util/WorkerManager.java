@@ -47,10 +47,14 @@ public class WorkerManager {
     public static final String INPUT_TRIGGER_DATE = "trigger_date";
 
     public static void disabled(Context context) {
+        cancelPeriodic(context);
+        cancelTimer(context);
+    }
+
+    public static void cancelPeriodic(Context context) {
         WorkManager manager = WorkManager.getInstance(context);
         manager.cancelUniqueWork(PERIODIC_WORK_NAME);
         manager.cancelUniqueWork(LEGACY_PERIODIC_WORK_NAME);
-        manager.cancelAllWorkByTag(TIMER_WORK_TAG);
     }
 
     public static void cancelTimer(Context context) {
@@ -77,8 +81,12 @@ public class WorkerManager {
             WorkManager manager = WorkManager.getInstance(context);
             manager.cancelUniqueWork(LEGACY_PERIODIC_WORK_NAME);
             manager.enqueueUniquePeriodicWork(PERIODIC_WORK_NAME,
-                            ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, builder.build());
+                            ExistingPeriodicWorkPolicy.CANCEL_AND_REENQUEUE, builder.build())
+                    .getResult().get();
             return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            L.alog().w("WorkerManager", e, "enable work interrupted");
         } catch (Throwable e) {
             L.alog().w("WorkerManager", e, "enable work error");
         }

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.PreferencesKeys;
 import androidx.datastore.rxjava3.RxDataStore;
 import androidx.preference.PreferenceDataStore;
 
+import java.util.Map;
 import java.util.Set;
 
 import io.reactivex.rxjava3.core.Completable;
@@ -167,6 +168,16 @@ public class SettingTrayPreferences extends PreferenceDataStore {
         return mAccessor.updateDataAsync(p -> {
             MutablePreferences preferences = p.toMutablePreferences();
             preferences.set(PreferencesKeys.booleanKey(key), value);
+            return Single.just(preferences);
+        }).ignoreElement();
+    }
+
+    public Completable putStringsAsync(@NonNull Map<String, String> values) {
+        return mAccessor.updateDataAsync(p -> {
+            MutablePreferences preferences = p.toMutablePreferences();
+            for (Map.Entry<String, String> value : values.entrySet()) {
+                preferences.set(PreferencesKeys.stringKey(value.getKey()), value.getValue());
+            }
             return Single.just(preferences);
         }).ignoreElement();
     }
@@ -334,6 +345,11 @@ public class SettingTrayPreferences extends PreferenceDataStore {
 
         @Override
         public Completable putBooleanAsync(@NonNull String key, boolean value) {
+            return Completable.complete();
+        }
+
+        @Override
+        public Completable putStringsAsync(@NonNull Map<String, String> values) {
             return Completable.complete();
         }
     }

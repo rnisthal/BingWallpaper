@@ -6,9 +6,13 @@ import androidx.annotation.IntDef;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 import io.reactivex.rxjava3.core.Completable;
+import io.reactivex.rxjava3.functions.Action;
 import me.liaoheng.wallpaper.R;
 import me.liaoheng.wallpaper.ui.SettingsActivity;
 
@@ -18,14 +22,16 @@ import me.liaoheng.wallpaper.ui.SettingsActivity;
  */
 public class Settings {
 
+    private static final Object AUTOMATIC_UPDATE_LOCK = new Object();
+
     public static boolean isAutomaticUpdateEnabled(Context context) {
         return SettingTrayPreferences.get(context)
                 .getBoolean(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, false);
     }
 
     public static Completable setAutomaticUpdateEnabled(boolean enabled) {
-        return SettingTrayPreferences.get()
-                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, enabled);
+        return writeAutomaticState(SettingTrayPreferences.get()
+                .putBooleanAsync(SettingsActivity.PREF_SET_WALLPAPER_DAILY_UPDATE, enabled));
     }
 
     public static Completable setAutomaticUpdateType(int type) {
@@ -202,6 +208,7 @@ public class Settings {
     }
 
     private static final String LAST_WALLPAPER_BASE_URL = "last_wallpaper_base_url";
+    private static final String LAST_WALLPAPER_APPLIED_DATE = "last_wallpaper_applied_date";
 
     public static void setLastWallpaperBaseUrl(Context context, String baseUrl) {
         SettingTrayPreferences.get(context).put(LAST_WALLPAPER_BASE_URL, baseUrl);
@@ -209,6 +216,24 @@ public class Settings {
 
     public static Completable setLastWallpaperBaseUrlAsync(String baseUrl) {
         return SettingTrayPreferences.get().putStringAsync(LAST_WALLPAPER_BASE_URL, baseUrl);
+    }
+
+    public static Completable setWallpaperSuccessAsync(String imageUrl, String baseUrl, String appliedDate) {
+        Map<String, String> values = new HashMap<>();
+        values.put(Constants.PREF_LAST_WALLPAPER_IMAGE_URL, imageUrl);
+        values.put(LAST_WALLPAPER_BASE_URL, baseUrl);
+        values.put(LAST_WALLPAPER_APPLIED_DATE, appliedDate);
+        return SettingTrayPreferences.get().putStringsAsync(values);
+    }
+
+    public static boolean wasWallpaperApplied(String baseUrl, String date) {
+        return wasWallpaperApplied(baseUrl,
+                SettingTrayPreferences.get().getString(LAST_WALLPAPER_BASE_URL, ""), date,
+                SettingTrayPreferences.get().getString(LAST_WALLPAPER_APPLIED_DATE, ""));
+    }
+
+    static boolean wasWallpaperApplied(String baseUrl, String storedBaseUrl, String date, String storedDate) {
+        return Objects.equals(baseUrl, storedBaseUrl) && Objects.equals(date, storedDate);
     }
 
     public static String getLastWallpaperBaseUrl(Context context) {
@@ -246,11 +271,29 @@ public class Settings {
     public static final String LIVE_WALLPAPER_HEART_BEAT = "live_wallpaper_heart_beat";
 
     public static void setJobType(Context context, @JobType int type) {
-        SettingTrayPreferences.get(context).put(BING_WALLPAPER_JOB_TYPE, type);
+        setJobTypeAsync(type).blockingAwait();
     }
 
     public static Completable setJobTypeAsync(@JobType int type) {
-        return SettingTrayPreferences.get().putIntAsync(BING_WALLPAPER_JOB_TYPE, type);
+        return writeAutomaticState(SettingTrayPreferences.get().putIntAsync(BING_WALLPAPER_JOB_TYPE, type));
+    }
+
+    private static Completable writeAutomaticState(Completable write) {
+        return Completable.fromAction(() -> {
+            synchronized (AUTOMATIC_UPDATE_LOCK) {
+                write.blockingAwait();
+            }
+        });
+    }
+
+    public static boolean runIfAutomaticUpdateCurrent(BooleanSupplier condition, Action action) throws Throwable {
+        synchronized (AUTOMATIC_UPDATE_LOCK) {
+            if (!condition.getAsBoolean()) {
+                return false;
+            }
+            action.run();
+            return true;
+        }
     }
 
     @JobType

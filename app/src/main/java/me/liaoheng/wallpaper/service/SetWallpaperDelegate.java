@@ -93,7 +93,7 @@ public class SetWallpaperDelegate {
                 return AutomaticUpdateResult.UNCHANGED;
             }
             if (!TextUtils.isEmpty(storedBase) && storedBase.equals(candidateBase)) {
-                mServiceHelper.unchanged();
+                mServiceHelper.unchanged(image);
                 return AutomaticUpdateResult.UNCHANGED;
             }
             completeDay = !TextUtils.isEmpty(storedBase);
@@ -105,12 +105,22 @@ public class SetWallpaperDelegate {
 
         try {
             File wallpaper = downloadWallpaper(image);
-            if (automatic && !isAutomaticValid(automaticGate)) {
-                mServiceHelper.unchanged();
-                return AutomaticUpdateResult.SKIPPED;
+            if (automatic) {
+                Wallpaper appliedImage = image;
+                boolean shouldCompleteDay = completeDay;
+                boolean applied = Settings.runIfAutomaticUpdateCurrent(
+                        () -> isAutomaticValid(automaticGate), () -> {
+                            applyWallpaper(appliedImage, config, wallpaper);
+                            success(config, appliedImage, shouldCompleteDay);
+                        });
+                if (!applied) {
+                    mServiceHelper.unchanged();
+                    return AutomaticUpdateResult.SKIPPED;
+                }
+            } else {
+                applyWallpaper(image, config, wallpaper);
+                success(config, image, completeDay);
             }
-            applyWallpaper(image, config, wallpaper);
-            success(config, image, completeDay);
             return AutomaticUpdateResult.APPLIED;
         } catch (Throwable e) {
             failure(config, e);

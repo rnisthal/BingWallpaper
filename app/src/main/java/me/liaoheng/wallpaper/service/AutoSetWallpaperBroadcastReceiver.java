@@ -55,7 +55,9 @@ public class AutoSetWallpaperBroadcastReceiver extends BroadcastReceiver {
             }
             if (Settings.isAutomaticUpdateEnabled(context)
                     && Settings.getJobType(context) == Settings.TIMER) {
-                BingWallpaperJobManager.enableTimer(context);
+                if (!BingWallpaperJobManager.enableTimer(context)) {
+                    BingWallpaperAlarmManager.scheduleRetry(context);
+                }
             }
             return;
         }
@@ -66,11 +68,17 @@ public class AutoSetWallpaperBroadcastReceiver extends BroadcastReceiver {
             if (Settings.isEnableLog(context)) {
                 LogDebugFileUtils.get().i(TAG, "timer : %s", action);
             }
-            BingWallpaperAlarmManager.scheduleNext(context);
             try {
                 WorkerManager.enqueueTimer(context, LocalDate.now(), false).getResult().get();
+                if (!BingWallpaperAlarmManager.scheduleNext(context)) {
+                    BingWallpaperAlarmManager.scheduleRetry(context);
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                BingWallpaperAlarmManager.scheduleRetry(context);
             } catch (Exception exception) {
                 L.alog().w(TAG, exception, "timer enqueue failure");
+                BingWallpaperAlarmManager.scheduleRetry(context);
             }
         }
     }

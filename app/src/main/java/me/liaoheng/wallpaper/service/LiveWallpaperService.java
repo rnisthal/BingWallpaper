@@ -83,6 +83,7 @@ public class LiveWallpaperService extends WallpaperService {
     private SetWallpaperServiceHelper mServiceHelper;
     private CompositeDisposable mLoadWallpaperDisposable;
     private final long mCheckPeriodic = Constants.DEF_LIVE_WALLPAPER_CHECK_PERIODIC;
+    private boolean mLiveDispatchAccepted;
 
     @Override
     public Engine onCreateEngine() {
@@ -198,7 +199,7 @@ public class LiveWallpaperService extends WallpaperService {
                 return;
             }
             if (!TextUtils.isEmpty(storedBase) && storedBase.equals(image.getBaseUrl())) {
-                mServiceHelper.unchanged();
+                mServiceHelper.unchanged(image);
                 return;
             }
 
@@ -207,16 +208,16 @@ public class LiveWallpaperService extends WallpaperService {
             if (original == null || !original.exists()) {
                 throw new IOException("Download wallpaper failure");
             }
-            if (!BingWallpaperUtils.isAutomaticUpdateEligible(this)
-                    || Settings.getJobType(this) != Settings.LIVE_WALLPAPER
-                    || !BingWallpaperJobManager.isLiveWallpaperActive(this)) {
-                mServiceHelper.unchanged();
-                return;
-            }
-
             DownloadBitmap download = new DownloadBitmap(image, config);
-            setWallpaper(config, download);
-            mServiceHelper.success(config, image, !TextUtils.isEmpty(storedBase));
+            boolean dispatched = Settings.runIfAutomaticUpdateCurrent(this::isAutomaticLiveCurrent, () -> {
+                if (!setWallpaper(config, download)) {
+                    throw new IOException("Live wallpaper dispatch failure");
+                }
+                mServiceHelper.success(config, image, !TextUtils.isEmpty(storedBase));
+            });
+            if (!dispatched) {
+                mServiceHelper.unchanged();
+            }
         } catch (Throwable throwable) {
             mServiceHelper.failure(config, throwable);
         } finally {
@@ -302,14 +303,15 @@ public class LiveWallpaperService extends WallpaperService {
                 : BingWallpaperUtils.getResolutionImageUrl(this, image.getBaseUrl());
     }
 
-    private void setWallpaper(Config config, DownloadBitmap d) {
+    private synchronized boolean setWallpaper(Config config, DownloadBitmap d) {
         Intent intent = new Intent(VIEW_LIVE_WALLPAPER);
         intent.putExtra(Config.EXTRA_SET_WALLPAPER_IMAGE, d.image);
         intent.putExtra(Config.EXTRA_SET_WALLPAPER_CONFIG, d.config);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        mLiveDispatchAccepted = false;
+        LocalBroadcastManager.getInstance(this).sendBroadcastSync(intent);
 
         if (config.getWallpaperMode() == Constants.EXTRA_SET_WALLPAPER_MODE_HOME) {
-            return;
+            return mLiveDispatchAccepted;
         }
         if (ROM.getROM().isEmui() || UIHelper.isNewMagicUI()) {
             downloadLockWallpaper(d);
@@ -317,6 +319,13 @@ public class LiveWallpaperService extends WallpaperService {
                 && Settings.isMiuiLockScreenSupport(getApplicationContext())) {
             downloadLockWallpaper(d);
         }
+        return mLiveDispatchAccepted;
+    }
+
+    private boolean isAutomaticLiveCurrent() {
+        return BingWallpaperUtils.isAutomaticUpdateEligible(this)
+                && Settings.getJobType(this) == Settings.LIVE_WALLPAPER
+                && BingWallpaperJobManager.isLiveWallpaperActive(this);
     }
 
     private void downloadLockWallpaper(DownloadBitmap wallpaper) {
@@ -615,9 +624,11 @@ public class LiveWallpaperService extends WallpaperService {
                     Wallpaper image = intent.getParcelableExtra(Config.EXTRA_SET_WALLPAPER_IMAGE);
                     Config config = intent.getParcelableExtra(Config.EXTRA_SET_WALLPAPER_CONFIG);
                     DownloadBitmap info = new DownloadBitmap(image, config);
-                    if (mActionHandler == null) {
+                    if (mActionHandler == null || (config != null && config.isBackground()
+                            && !isAutomaticLiveCurrent())) {
                         return;
                     }
+                    mLiveDispatchAccepted = true;
                     mActionHandler.removeMessages(DOWNLOAD_DRAW);
                     mActionHandler.sendDelayed(DOWNLOAD_DRAW, info, DOWNLOAD_DRAW_DELAY);
                 }

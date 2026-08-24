@@ -33,10 +33,14 @@ public class BingWallpaperJobManager {
     }
 
     public static void disabled(Context context, boolean force) {
+        try {
+            Settings.setJobTypeAsync(Settings.NONE).blockingAwait();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "disable job state failure");
+        }
         WorkerManager.disabled(context);
         BingWallpaperAlarmManager.disabled(context);
         setLivePolling(context, false);
-        Settings.setJobType(context, Settings.NONE);
     }
 
     @Deprecated
@@ -88,48 +92,77 @@ public class BingWallpaperJobManager {
                     return Settings.TIMER;
                 }
             }
-        } catch (Throwable ignore) {
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "enable job failure");
         }
         return Settings.NONE;
     }
 
     public static boolean enableSystem(Context context) {
         long time = TimeUnit.HOURS.toSeconds(Settings.getAutomaticUpdateInterval(context));
-        boolean enabled = WorkerManager.enabled(context, time);
-        if (enabled) {
-            WorkerManager.cancelTimer(context);
-            BingWallpaperAlarmManager.disabled(context);
-            setLivePolling(context, false);
-            Settings.setJobType(context, Settings.WORKER);
-            new Thread(() -> {
-                if (Settings.isEnableLog(context)) {
-                    LogDebugFileUtils.get().i(TAG, "Enable scheduler interval time : %s", time);
-                }
-            }).start();
-            L.alog().d(TAG, "enable scheduler interval time : %s", time);
+        int previousJobType = Settings.getJobType(context);
+        try {
+            Settings.setJobTypeAsync(Settings.WORKER).blockingAwait();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "persist worker state failure");
+            return false;
         }
-        return enabled;
+        boolean enabled = WorkerManager.enabled(context, time);
+        if (!enabled) {
+            restoreJobType(previousJobType);
+            return false;
+        }
+        WorkerManager.cancelTimer(context);
+        BingWallpaperAlarmManager.disabled(context);
+        setLivePolling(context, false);
+        new Thread(() -> {
+            if (Settings.isEnableLog(context)) {
+                LogDebugFileUtils.get().i(TAG, "Enable scheduler interval time : %s", time);
+            }
+        }).start();
+        L.alog().d(TAG, "enable scheduler interval time : %s", time);
+        return true;
     }
 
     public static boolean enableTimer(Context context) {
         LocalTime updateTime = BingWallpaperUtils.getDayUpdateTime(context);
+        int previousJobType = Settings.getJobType(context);
+        try {
+            Settings.setJobTypeAsync(Settings.TIMER).blockingAwait();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "persist timer state failure");
+            return false;
+        }
         boolean enabled = BingWallpaperAlarmManager.enabled(context, updateTime);
-        if (enabled) {
-            WorkerManager.disabled(context);
-            setLivePolling(context, false);
-            Settings.setJobType(context, Settings.TIMER);
+        if (!enabled) {
+            restoreJobType(previousJobType);
+            return false;
+        }
+        try {
             if (BingWallpaperUtils.isAtOrAfterEarliestTime(LocalTime.now(), updateTime)
                     && BingWallpaperUtils.isTaskUndone(context)) {
-                WorkerManager.enqueueTimer(context, LocalDate.now(), true);
+                WorkerManager.enqueueTimer(context, LocalDate.now(), true).getResult().get();
             }
-            new Thread(() -> {
-                if (Settings.isEnableLog(context)) {
-                    LogDebugFileUtils.get().i(TAG, "Enable timer time : %s", updateTime.toString("HH:mm"));
-                }
-            }).start();
-            L.alog().d(TAG, "enable timer time : %s", updateTime.toString("HH:mm"));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            BingWallpaperAlarmManager.disabled(context);
+            restoreJobType(previousJobType);
+            return false;
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "enqueue timer failure");
+            BingWallpaperAlarmManager.disabled(context);
+            restoreJobType(previousJobType);
+            return false;
         }
-        return enabled;
+        WorkerManager.cancelPeriodic(context);
+        setLivePolling(context, false);
+        new Thread(() -> {
+            if (Settings.isEnableLog(context)) {
+                LogDebugFileUtils.get().i(TAG, "Enable timer time : %s", updateTime.toString("HH:mm"));
+            }
+        }).start();
+        L.alog().d(TAG, "enable timer time : %s", updateTime.toString("HH:mm"));
+        return true;
     }
 
     public static int enableLiveService(Context context) {
@@ -138,9 +171,9 @@ public class BingWallpaperJobManager {
         }
         try {
             if (isLiveWallpaperActive(context)) {
+                Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
                 WorkerManager.disabled(context);
                 BingWallpaperAlarmManager.disabled(context);
-                Settings.setJobType(context, Settings.LIVE_WALLPAPER);
                 setLivePolling(context, true);
                 return Settings.LIVE_WALLPAPER;
             }
@@ -168,10 +201,18 @@ public class BingWallpaperJobManager {
 
     public static void onActivityResult(Context context, int requestCode, int resultCode, YNCallback callback) {
         if (requestCode == LIVE_WALLPAPER_REQUEST_CODE) {
-            if (Activity.RESULT_OK == resultCode) {
+            if (Activity.RESULT_OK == resultCode && isLiveWallpaperActive(context)) {
+                try {
+                    Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
+                } catch (Throwable throwable) {
+                    L.alog().w(TAG, throwable, "persist live state failure");
+                    if (callback != null) {
+                        callback.onDeny();
+                    }
+                    return;
+                }
                 WorkerManager.disabled(context);
                 BingWallpaperAlarmManager.disabled(context);
-                Settings.setJobType(context, Settings.LIVE_WALLPAPER);
                 setLivePolling(context, true);
                 new Thread(() -> {
                     if (Settings.isEnableLog(context)) {
@@ -252,9 +293,14 @@ public class BingWallpaperJobManager {
             return enableTimer(context);
         }
         if (jobType == Settings.LIVE_WALLPAPER && isLiveWallpaperActive(context)) {
+            try {
+                Settings.setJobTypeAsync(Settings.LIVE_WALLPAPER).blockingAwait();
+            } catch (Throwable throwable) {
+                L.alog().w(TAG, throwable, "restore live state failure");
+                return false;
+            }
             WorkerManager.disabled(context);
             BingWallpaperAlarmManager.disabled(context);
-            Settings.setJobType(context, Settings.LIVE_WALLPAPER);
             setLivePolling(context, true);
             return true;
         }
@@ -267,6 +313,14 @@ public class BingWallpaperJobManager {
         intent.putExtra(LiveWallpaperService.EXTRA_ENABLE_LIVE_WALLPAPER, enabled);
         intent.setPackage(context.getPackageName());
         context.sendBroadcast(intent, LiveWallpaperService.PERMISSION_UPDATE_LIVE_WALLPAPER);
+    }
+
+    private static void restoreJobType(@Settings.JobType int jobType) {
+        try {
+            Settings.setJobTypeAsync(jobType).blockingAwait();
+        } catch (Throwable throwable) {
+            L.alog().w(TAG, throwable, "restore job state failure");
+        }
     }
 
 }

@@ -4,6 +4,8 @@ import android.content.Context;
 
 import com.github.liaoheng.common.util.L;
 
+import org.joda.time.LocalDate;
+
 import me.liaoheng.wallpaper.model.BingWallpaperState;
 import me.liaoheng.wallpaper.model.Config;
 import me.liaoheng.wallpaper.model.Wallpaper;
@@ -68,8 +70,8 @@ public class SetWallpaperServiceHelper {
             }
         }).start();
         if (config.isBackground()) {
-            Settings.setLastWallpaperImageUrlAsync(image.getImageUrl())
-                    .andThen(Settings.setLastWallpaperBaseUrlAsync(image.getBaseUrl()))
+            Settings.setWallpaperSuccessAsync(image.getImageUrl(), image.getBaseUrl(),
+                            completeDay ? LocalDate.now().toString() : "")
                     .blockingAwait();
             if (completeDay) {
                 BingWallpaperUtils.taskComplete(mContext, TAG);
@@ -90,6 +92,13 @@ public class SetWallpaperServiceHelper {
     public void unchanged() {
         NotificationUtils.clearStartNotification(mContext);
         sendSetWallpaperBroadcast(BingWallpaperState.SUCCESS);
+    }
+
+    public void unchanged(Wallpaper image) {
+        if (image != null && Settings.wasWallpaperApplied(image.getBaseUrl(), LocalDate.now().toString())) {
+            BingWallpaperUtils.taskComplete(mContext, TAG);
+        }
+        unchanged();
     }
 
     private void showSuccessNotification(Wallpaper image, boolean isShow) {

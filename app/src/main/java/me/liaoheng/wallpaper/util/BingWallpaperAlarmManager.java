@@ -21,6 +21,7 @@ import me.liaoheng.wallpaper.service.AutoSetWallpaperBroadcastReceiver;
 public class BingWallpaperAlarmManager {
 
     private static final int REQUEST_CODE = 0x12;
+    private static final int RETRY_MINUTES = 30;
 
     private static PendingIntent getPendingIntent(Context context) {
         Intent intent = new Intent(context, AutoSetWallpaperBroadcastReceiver.class);
@@ -49,6 +50,15 @@ public class BingWallpaperAlarmManager {
 
     public static boolean scheduleNext(Context context) {
         return enabled(context, BingWallpaperUtils.getDayUpdateTime(context));
+    }
+
+    public static boolean scheduleRetry(Context context) {
+        try {
+            return add(context, DateTime.now().plusMinutes(RETRY_MINUTES));
+        } catch (Throwable throwable) {
+            L.alog().w("BingWallpaperAlarmManager", throwable, "retry alarm error");
+            return false;
+        }
     }
 
     private static boolean add(Context context, DateTime time) {

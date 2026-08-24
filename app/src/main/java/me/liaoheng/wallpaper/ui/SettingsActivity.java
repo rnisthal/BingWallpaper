@@ -161,6 +161,12 @@ public class SettingsActivity extends BaseActivity {
         private static final String STATE_PENDING_OLD = "automatic_pending_old";
         private static final String STATE_PENDING_NEW = "automatic_pending_new";
         private static final String STATE_PENDING_JOB = "automatic_pending_job";
+        private static final String STATE_PENDING_PHASE = "automatic_pending_phase";
+        private static final int PHASE_APPLY = 0;
+        private static final int PHASE_LIVE = 1;
+        private static final int PHASE_ROLLBACK = 2;
+        private static final int PHASE_DISABLE = 3;
+        private int mAutomaticPhase = PHASE_APPLY;
 
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
@@ -349,7 +355,7 @@ public class SettingsActivity extends BaseActivity {
             if (WallpaperUtils.isNotSupportedWallpaper(requireContext())) {
                 mDailyUpdatePreference.setEnabled(false);
             }
-            restorePendingLiveChange(savedInstanceState);
+            restorePendingAutomaticChange(savedInstanceState);
         }
 
         private void initWorkerView() {
@@ -447,13 +453,18 @@ public class SettingsActivity extends BaseActivity {
             mPendingNewValue = newValue;
             mPendingPreviousJobType = Settings.getJobType(requireContext());
             mWaitingForLiveResult = false;
+            mAutomaticPhase = PHASE_APPLY;
             updateAutomaticControls();
 
-            mAutomaticDisposables.add(persistAutomaticValue(preference.getKey(), newValue)
+            persistPendingAutomaticValue();
+            return false;
+        }
+
+        private void persistPendingAutomaticValue() {
+            mAutomaticDisposables.add(persistAutomaticValue(mPendingPreference.getKey(), mPendingNewValue)
                     .subscribeOn(Schedulers.io())
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(this::applyAutomaticChange, throwable -> rollbackAutomaticChange()));
-            return false;
         }
 
         private Completable persistAutomaticValue(String key, Object value) {
@@ -493,6 +504,7 @@ public class SettingsActivity extends BaseActivity {
 
             if (result == BingWallpaperJobManager.PENDING_LIVE) {
                 mWaitingForLiveResult = true;
+                mAutomaticPhase = PHASE_LIVE;
                 return;
             }
             if (success) {
@@ -517,6 +529,7 @@ public class SettingsActivity extends BaseActivity {
         }
 
         private void rollbackAutomaticChange() {
+            mAutomaticPhase = PHASE_ROLLBACK;
             Preference preference = mPendingPreference;
             Object oldValue = mPendingOldValue;
             int previousJobType = mPendingPreviousJobType;
@@ -525,14 +538,36 @@ public class SettingsActivity extends BaseActivity {
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(() -> {
                         setPreferenceValue(preference, oldValue);
+                        boolean restored;
                         if (Settings.isAutomaticUpdateEnabled(requireContext())) {
-                            BingWallpaperJobManager.restore(requireContext(), previousJobType);
+                            restored = BingWallpaperJobManager.restore(requireContext(), previousJobType);
                         } else {
                             BingWallpaperJobManager.disabled(requireContext());
+                            restored = true;
+                        }
+                        if (!restored) {
+                            failClosedAutomaticChange();
+                            return;
                         }
                         UIUtils.showToast(requireContext(), R.string.enable_job_error);
                         finishAutomaticChange(false);
-                    }, throwable -> finishAutomaticChange(false)));
+                    }, throwable -> failClosedAutomaticChange()));
+        }
+
+        private void failClosedAutomaticChange() {
+            mAutomaticPhase = PHASE_DISABLE;
+            Context context = requireContext().getApplicationContext();
+            BingWallpaperJobManager.disabled(context);
+            mAutomaticDisposables.add(Settings.setAutomaticUpdateEnabled(false)
+                    .subscribeOn(Schedulers.io())
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe(this::finishFailedClosedChange, throwable -> finishFailedClosedChange()));
+        }
+
+        private void finishFailedClosedChange() {
+            mDailyUpdatePreference.setChecked(false);
+            UIUtils.showToast(requireContext(), R.string.enable_job_error);
+            finishAutomaticChange(false);
         }
 
         private void finishAutomaticChange(boolean useNewValue) {
@@ -545,6 +580,7 @@ public class SettingsActivity extends BaseActivity {
             mPendingNewValue = null;
             mPendingPreviousJobType = Settings.NONE;
             mWaitingForLiveResult = false;
+            mAutomaticPhase = PHASE_APPLY;
             mDailyUpdatePreference.setSummary(Settings.getJobTypeString(requireContext()));
             updateAutomaticControls();
         }
@@ -583,7 +619,7 @@ public class SettingsActivity extends BaseActivity {
                     || mode == Settings.AUTOMATIC_UPDATE_TYPE_SYSTEM));
         }
 
-        private void restorePendingLiveChange(Bundle state) {
+        private void restorePendingAutomaticChange(Bundle state) {
             if (state == null || !state.containsKey(STATE_PENDING_KEY)) {
                 return;
             }
@@ -595,9 +631,17 @@ public class SettingsActivity extends BaseActivity {
             mPendingOldValue = parseAutomaticValue(key, state.getString(STATE_PENDING_OLD));
             mPendingNewValue = parseAutomaticValue(key, state.getString(STATE_PENDING_NEW));
             mPendingPreviousJobType = state.getInt(STATE_PENDING_JOB, Settings.NONE);
+            mAutomaticPhase = state.getInt(STATE_PENDING_PHASE, PHASE_APPLY);
             mAutomaticTransition = true;
-            mWaitingForLiveResult = true;
+            mWaitingForLiveResult = mAutomaticPhase == PHASE_LIVE;
             updateAutomaticControls();
+            if (mAutomaticPhase == PHASE_APPLY) {
+                persistPendingAutomaticValue();
+            } else if (mAutomaticPhase == PHASE_ROLLBACK) {
+                rollbackAutomaticChange();
+            } else if (mAutomaticPhase == PHASE_DISABLE) {
+                failClosedAutomaticChange();
+            }
         }
 
         private Object parseAutomaticValue(String key, String value) {
@@ -613,11 +657,12 @@ public class SettingsActivity extends BaseActivity {
 
         @Override
         public void onSaveInstanceState(@NonNull Bundle outState) {
-            if (mWaitingForLiveResult && mPendingPreference != null) {
+            if (mAutomaticTransition && mPendingPreference != null) {
                 outState.putString(STATE_PENDING_KEY, mPendingPreference.getKey());
                 outState.putString(STATE_PENDING_OLD, String.valueOf(mPendingOldValue));
                 outState.putString(STATE_PENDING_NEW, String.valueOf(mPendingNewValue));
                 outState.putInt(STATE_PENDING_JOB, mPendingPreviousJobType);
+                outState.putInt(STATE_PENDING_PHASE, mAutomaticPhase);
             }
             super.onSaveInstanceState(outState);
         }
@@ -631,9 +676,7 @@ public class SettingsActivity extends BaseActivity {
             if (mReceiver != null) {
                 LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(mReceiver);
             }
-            if (!mAutomaticTransition) {
-                mAutomaticDisposables.clear();
-            }
+            mAutomaticDisposables.clear();
             super.onDestroy();
         }
     }
