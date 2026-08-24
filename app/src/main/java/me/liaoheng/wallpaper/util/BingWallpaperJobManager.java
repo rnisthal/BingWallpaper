@@ -530,9 +530,11 @@ public class BingWallpaperJobManager {
         intent.putExtra(LiveWallpaperService.EXTRA_CONFIRMED_LIVE_STATE, enabled);
         intent.setPackage(context.getPackageName());
         CountDownLatch completed = new CountDownLatch(1);
+        AtomicBoolean acknowledged = new AtomicBoolean(false);
         BroadcastReceiver resultReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context ignored, Intent resultIntent) {
+                acknowledged.set(getResultCode() == Activity.RESULT_OK);
                 completed.countDown();
             }
         };
@@ -540,7 +542,7 @@ public class BingWallpaperJobManager {
                 resultReceiver, new Handler(Looper.getMainLooper()), Activity.RESULT_CANCELED,
                 null, null);
         try {
-            return completed.await(5, TimeUnit.SECONDS);
+            return completed.await(5, TimeUnit.SECONDS) && acknowledged.get();
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return false;

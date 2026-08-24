@@ -5,5 +5,10 @@ public enum AutomaticUpdateResult {
     UNCHANGED,
     SKIPPED,
     RETRYABLE_FAILURE,
-    FAILURE
+    FAILURE;
+
+    public boolean shouldRetryTimer(boolean taskUndone) {
+        return this == UNCHANGED || this == RETRYABLE_FAILURE
+                || this == APPLIED && taskUndone;
+    }
 }

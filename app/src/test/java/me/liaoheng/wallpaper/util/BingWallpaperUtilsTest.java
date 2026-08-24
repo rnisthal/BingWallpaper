@@ -70,6 +70,17 @@ public class BingWallpaperUtilsTest extends BaseTest {
     }
 
     @Test
+    public void unchangedEarlyLookupStillAllowsLaterSameDayPublication() {
+        String storedBase = "/th?id=OHR.Yesterday";
+
+        assertFalse(BingWallpaperUtils.shouldCompleteDay(storedBase, storedBase));
+        assertTrue(AutomaticUpdateResult.UNCHANGED.shouldRetryTimer(false));
+        assertTrue(BingWallpaperUtils.shouldCompleteDay(
+                storedBase, "/th?id=OHR.Today"));
+        assertFalse(AutomaticUpdateResult.APPLIED.shouldRetryTimer(false));
+    }
+
+    @Test
     public void unfinishedWorkStatesAreActive() {
         assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.ENQUEUED));
         assertTrue(WorkerManager.isActiveWorkState(WorkInfo.State.RUNNING));

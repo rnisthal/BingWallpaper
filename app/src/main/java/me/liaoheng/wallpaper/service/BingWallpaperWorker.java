@@ -73,10 +73,9 @@ public class BingWallpaperWorker extends Worker {
                         getApplicationContext(), source, triggerDate) : null);
         if (source == AutomaticUpdateSource.TIMER
                 && WorkerManager.isAutomaticSourceCurrent(getApplicationContext(), source, triggerDate)) {
-            if (updateResult == AutomaticUpdateResult.UNCHANGED
-                    || updateResult == AutomaticUpdateResult.RETRYABLE_FAILURE
-                    || (updateResult == AutomaticUpdateResult.APPLIED
-                    && BingWallpaperUtils.isTaskUndone(getApplicationContext()))) {
+            boolean taskUndone = updateResult == AutomaticUpdateResult.APPLIED
+                    && BingWallpaperUtils.isTaskUndone(getApplicationContext());
+            if (updateResult.shouldRetryTimer(taskUndone)) {
                 return Result.retry();
             }
         }
